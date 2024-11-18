@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-type ITestingContext interface {
-	OnInit(t *testing.T)
+type ITestingAware interface {
+	OnTestingInit(t *testing.T)
 }
 
-type Case[Q any, R any, TestingContext ITestingContext] struct {
+type Case[Q any, R any, TestingContext any] struct {
 	Name     string
-	Run      func(tctx TestingContext, req *Q) (*R, error)
-	Setup    func(tctx TestingContext, req *Q) (TestingContext, *Q)
-	Assert   func(t *testing.T, tctx TestingContext, req *Q, res *R, err error)
+	Run      func(tctx *TestingContext, req *Q) (*R, error)
+	Setup    func(tctx *TestingContext, req *Q) (*TestingContext, *Q)
+	Assert   func(t *testing.T, tctx *TestingContext, req *Q, res *R, err error)
 	SubCases []*Case[Q, R, TestingContext]
 }
 

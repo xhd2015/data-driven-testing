@@ -7,12 +7,12 @@ import (
 	"strings"
 )
 
-func GenerateTestFile[Q any, R any, TestingContext ITestingContext](tt *Case[Q, R, TestingContext], caseName string, file string, pkg string) error {
+func GenerateTestFile[Q any, R any, TestingContext ITestingAware](tt *Case[Q, R, TestingContext], caseName string, file string, pkg string) error {
 	code := GenerateTestFileCode(tt, caseName, pkg)
 	return os.WriteFile(file, []byte(code), 0755)
 }
 
-func GenerateTestFileCode[Q any, R any, TestingContext ITestingContext](tt *Case[Q, R, TestingContext], caseName string, pkg string) string {
+func GenerateTestFileCode[Q any, R any, TestingContext ITestingAware](tt *Case[Q, R, TestingContext], caseName string, pkg string) string {
 	cases := tt.GetAllCases()
 
 	funcs := make([]string, 0, len(cases))
