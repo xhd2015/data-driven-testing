@@ -1,0 +1,15 @@
+.DS_Store
+.vscode
+.idea
+
+*.log
+*.bin
+*.a
+*.exe
+/*.log
+
+# coverage
+/covers
+cover*.out
+
+/tmp
