@@ -22,7 +22,7 @@ func cleanGen(fset *token.FileSet, code string, astFile *ast.File, edit *goedit.
 	var hasUpdate bool
 	n := len(astFile.Decls)
 
-	fileEnd := astFile.FileEnd
+	fileEnd := getFileEnd(fset, len(code), astFile)
 	for i := 0; i < n; i++ {
 		fnDecl, ok := astFile.Decls[i].(*ast.FuncDecl)
 		if !ok {
