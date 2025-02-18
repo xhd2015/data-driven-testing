@@ -5,17 +5,21 @@ import (
 	"go/ast"
 	"go/token"
 	"strconv"
+	"strings"
+
+	"github.com/xhd2015/xgo/support/edit/goedit"
 )
 
-type FileVarEdit struct {
-	fileVar   *FileVar
-	hasUpdate bool
-	code      string
-}
-
-type FileVar struct {
+type FileEdit struct {
 	astFile *astFile
 	vars    []*TestCaseVar
+
+	noWrite bool
+
+	TargetFile *FileEdit
+
+	edit          *goedit.Edit
+	editHasUpdate bool
 }
 
 type TestCaseVar struct {
@@ -31,6 +35,43 @@ type TestCase struct {
 
 	RefVarName string
 	RefVar     *TestCaseVar
+}
+
+func (c *FileEdit) IsTestGo() bool {
+	return strings.HasSuffix(c.astFile.file, "_test.go")
+}
+
+func (c *FileEdit) FileName() string {
+	return c.astFile.file
+}
+
+func (c *FileEdit) GetEdit(fset *token.FileSet) *goedit.Edit {
+	if c.edit != nil {
+		return c.edit
+	}
+	c.edit = c.astFile.newEdit(fset)
+	return c.edit
+}
+
+func (c *FileEdit) GetFileEnd(fset *token.FileSet) token.Pos {
+	return getFileEnd(fset, len(c.astFile.code), c.astFile.ast)
+}
+
+func (c *FileEdit) EditAppend(fset *token.FileSet, code string) {
+	if code == "" {
+		return
+	}
+	end := c.GetFileEnd(fset)
+	c.GetEdit(fset).Insert(end, code)
+	c.editHasUpdate = true
+}
+
+func (c *FileEdit) EditHasUpdate() bool {
+	return c.editHasUpdate
+}
+
+func (c *FileEdit) MarkEditUpdate() {
+	c.editHasUpdate = true
 }
 
 func resolveVarRefs(vars []*TestCaseVar) error {

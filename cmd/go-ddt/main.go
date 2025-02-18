@@ -2,11 +2,8 @@ package main
 
 import (
 	"fmt"
-	"go/token"
 	"os"
-	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 const help = `
@@ -46,7 +43,7 @@ func handle(args []string) error {
 	case "version":
 		fmt.Println(VERSION)
 		return nil
-	case "help":
+	case "help", "--help":
 		fmt.Println(strings.TrimSpace(help))
 		return nil
 	case "gen":
@@ -58,7 +55,6 @@ func handle(args []string) error {
 
 func handleGen(args []string) error {
 	var dir string
-
 	var verbose bool
 	var dryRun bool
 	var remainArgs []string
@@ -97,99 +93,26 @@ func handleGen(args []string) error {
 	if dir == "" {
 		dir = "./"
 	}
+	// example env:
+	//   GOFILE=my_program_file.go
+	//   GOLINE=21
+	//   GOPACKAGE=my_program
+	goEnvFile := os.Getenv("GOFILE")
+	goEnvLine := os.Getenv("GOLINE")
+	goEnvPackage := os.Getenv("GOPACKAGE")
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
+	// log env
+	// fmt.Printf("DEBUG: GOFILE: %s\n", goEnvFile)
+	// fmt.Printf("DEBUG: GOLINE: %s\n", goEnvLine)
+	// fmt.Printf("DEBUG: GOPACKAGE: %s\n", goEnvPackage)
 
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
-			files = append(files, entry.Name())
-		}
-	}
-	// fmt.Println(files)
-
-	if len(files) == 0 {
-		return nil
-	}
-
-	fset := token.NewFileSet()
-	astFiles, err := ParseFiles(fset, dir, files)
-	if err != nil {
-		return err
-	}
-	// collect all vars
-	fileVars := make([]*FileVar, 0, len(astFiles))
-	for _, astFile := range astFiles {
-		astFileVars, err := pareFileVars(astFile.ast)
-		if err != nil {
-			return err
-		}
-		fileVars = append(fileVars, &FileVar{
-			astFile: astFile,
-			vars:    astFileVars,
-		})
-	}
-
-	// resolve vars
-	allVars := make([]*TestCaseVar, 0, len(fileVars))
-	for _, fileVar := range fileVars {
-		allVars = append(allVars, fileVar.vars...)
-	}
-	resolveVarRefs(allVars)
-
-	// delete all generated functions
-	fileEdits := make([]*FileVarEdit, 0, len(fileVars))
-	for _, fileVar := range fileVars {
-		edit := fileVar.astFile.newEdit(fset)
-		newCode, hasUpdate := cleanGen(fset, fileVar.astFile.code, fileVar.astFile.ast, edit)
-
-		if hasUpdate {
-			// trim suffix space
-			newCode = strings.TrimRightFunc(newCode, unicode.IsSpace)
-		}
-		fileEdits = append(fileEdits, &FileVarEdit{
-			fileVar:   fileVar,
-			hasUpdate: hasUpdate,
-			code:      newCode,
-		})
-	}
-
-	// regenerate functions
-	for _, fileEdit := range fileEdits {
-		var fileGenFuncs []string
-		for _, vr := range fileEdit.fileVar.vars {
-			if vr.HasRef {
-				continue
-			}
-			varGenFuncs := genTestCases(vr.VarName, vr.TestCase.getAllCases(nil), verbose)
-			fileGenFuncs = append(fileGenFuncs, varGenFuncs...)
-		}
-		if len(fileGenFuncs) == 0 {
-			continue
-		}
-		fileEdit.hasUpdate = true
-		fileEdit.code += "\n" + strings.Join(fileGenFuncs, "\n\n")
-	}
-
-	// write file
-	for _, fileEdit := range fileEdits {
-		if !fileEdit.hasUpdate {
-			continue
-		}
-		file := fileEdit.fileVar.astFile.file
+	// single go generate mode, change only one file
+	var singleFile string
+	if goEnvFile != "" && goEnvLine != "" && goEnvPackage != "" {
+		singleFile = goEnvFile
 		if verbose {
-			fmt.Printf("updating %s\n", file)
-		}
-
-		if !dryRun {
-			err = os.WriteFile(filepath.Join(dir, file), []byte(fileEdit.code), 0755)
-			if err != nil {
-				return err
-			}
+			fmt.Printf("go generate on: %s\n", singleFile)
 		}
 	}
-	return nil
+	return processGoFiles(dir, verbose, singleFile, dryRun)
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/xhd2015/xgo/support/edit/goedit"
 )
 
-func cleanGen(fset *token.FileSet, code string, astFile *ast.File, edit *goedit.Edit) (string, bool) {
+func cleanGenEdit(fset *token.FileSet, code string, astFile *ast.File, edit *goedit.Edit) bool {
 	progLines := make(map[int]*ast.Comment)
 	for _, cmt := range astFile.Comments {
 		for _, cm := range cmt.List {
@@ -29,14 +29,22 @@ func cleanGen(fset *token.FileSet, code string, astFile *ast.File, edit *goedit.
 			continue
 		}
 		fnLine := fset.Position(fnDecl.Pos()).Line
-		cm := progLines[fnLine-1]
-		if cm == nil {
+		commentLine := progLines[fnLine-1]
+		if commentLine == nil {
 			continue
 		}
 		hasUpdate = true
 
+		commentStartPos := commentLine.Pos()
+		delStartPos := commentStartPos
+		// delete one precendent empty space
+		commentStartIdx := fset.Position(commentStartPos).Offset
+		if commentStartIdx > 0 && isNewLine(code[commentStartIdx-1]) {
+			delStartPos = commentStartPos - 1
+		}
+
 		// delete all subsequent empty spaces
-		edit.Delete(cm.Pos(), fnDecl.End())
+		edit.Delete(delStartPos, fnDecl.End())
 		for p := fnDecl.End(); p < fileEnd; p++ {
 			idx := fset.Position(p).Offset
 			if idx >= len(code) || !isSpace(code[idx]) {
@@ -45,14 +53,13 @@ func cleanGen(fset *token.FileSet, code string, astFile *ast.File, edit *goedit.
 			edit.Delete(p, p+1)
 		}
 	}
-
-	if !hasUpdate {
-		return code, false
-	}
-
-	return edit.String(), true
+	return hasUpdate
 }
 
 func isSpace(c byte) bool {
 	return c == '\n' || c == ' ' || c == '\t'
+}
+
+func isNewLine(c byte) bool {
+	return c == '\n'
 }
