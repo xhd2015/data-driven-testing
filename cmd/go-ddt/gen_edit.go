@@ -155,7 +155,7 @@ func generateTestCasesForFile(fset *token.FileSet, fileEdit *FileEdit, verbose b
 			}
 			var suffix string
 			if i < len(varGenFuncs)-1 {
-				suffix = "\n\n"
+				suffix = "\n"
 			}
 			targetFile.EditAppend(fset, "\n"+genFunc+suffix)
 			needImportTesting = true

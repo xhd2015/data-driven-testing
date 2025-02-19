@@ -23,6 +23,7 @@ func cleanGenEdit(fset *token.FileSet, code string, astFile *ast.File, edit *goe
 	n := len(astFile.Decls)
 
 	fileEnd := getFileEnd(fset, len(code), astFile)
+	var lastDelEndOffset int // avoid overlap
 	for i := 0; i < n; i++ {
 		fnDecl, ok := astFile.Decls[i].(*ast.FuncDecl)
 		if !ok {
@@ -39,18 +40,22 @@ func cleanGenEdit(fset *token.FileSet, code string, astFile *ast.File, edit *goe
 		delStartPos := commentStartPos
 		// delete one precendent empty space
 		commentStartIdx := fset.Position(commentStartPos).Offset
-		if commentStartIdx > 0 && isNewLine(code[commentStartIdx-1]) {
+		if commentStartIdx > 0 && commentStartIdx-1 >= lastDelEndOffset && isNewLine(code[commentStartIdx-1]) {
 			delStartPos = commentStartPos - 1
 		}
 
 		// delete all subsequent empty spaces
-		edit.Delete(delStartPos, fnDecl.End())
-		for p := fnDecl.End(); p < fileEnd; p++ {
-			idx := fset.Position(p).Offset
-			if idx >= len(code) || !isSpace(code[idx]) {
+		endPos := fnDecl.End()
+		endPosOffset := fset.Position(endPos).Offset
+		edit.Delete(delStartPos, endPos)
+		lastDelEndOffset = endPosOffset
+		for p := endPos; p < fileEnd; p++ {
+			offset := fset.Position(p).Offset
+			if offset >= len(code) || !isSpace(code[offset]) {
 				break
 			}
 			edit.Delete(p, p+1)
+			lastDelEndOffset = offset + 1
 		}
 	}
 	return hasUpdate
