@@ -26,7 +26,7 @@ func processGoFiles(dir string, verbose bool, singleFile string, dryRun bool) er
 		return err
 	}
 
-	if err := parseAndResolveVars(fileEdits); err != nil {
+	if err := parseAndResolveVars(fset, fileEdits); err != nil {
 		return err
 	}
 	// delete all generated functions
@@ -118,11 +118,11 @@ func parseFileEdits(fset *token.FileSet, dir string, files []string) ([]*FileEdi
 	return fileEdits, nil
 }
 
-func parseAndResolveVars(fileEdits []*FileEdit) error {
+func parseAndResolveVars(fset *token.FileSet, fileEdits []*FileEdit) error {
 	// parse test vars
 	for _, fileEdit := range fileEdits {
 		astFile := fileEdit.astFile
-		astFileVars, err := pareFileVars(astFile.ast)
+		astFileVars, err := pareFileVars(fset, astFile.ast, fileEdit.astFile.code)
 		if err != nil {
 			return err
 		}

@@ -28,7 +28,17 @@ func (c *TestCase) getAllCases(parents TestCasePath) []TestCasePath {
 	return cases
 }
 
-func GetTestFuncName(path []string) string {
+func (c TestCasePath) GetEffectiveVariants() []*Variant {
+	n := len(c)
+	for i := n - 1; i >= 0; i-- {
+		if len(c[i].Variants) > 1 {
+			return c[i].Variants
+		}
+	}
+	return nil
+}
+
+func GetTestFuncName(path []string, variant *Variant) string {
 	names := make([]string, 0, len(path))
 	for _, name := range path {
 		if name == "" {
@@ -36,22 +46,34 @@ func GetTestFuncName(path []string) string {
 		}
 		names = append(names, name)
 	}
+	if variant != nil {
+		names = append(names, variant.ShortestName)
+	}
 	return "Test" + JoinAsFuncName(names)
 }
 
-func FormatGoFunc(testFnName string, path []string, rootVar string) string {
+func FormatGoFunc(testFnName string, path []string, rootVar string, variant *Variant) string {
 	quoteNames := make([]string, 0, len(path))
 	for _, name := range path {
 		quoteNames = append(quoteNames, strconv.Quote(name))
 	}
 
+	fnName := "RunPath"
+	extraArgs := ""
+	if variant != nil {
+		fnName = "RunPathVariant"
+		extraArgs = fmt.Sprintf(", %s", variant.Expr)
+	}
+
 	quoteNameLit := strings.Join(quoteNames, ", ")
 	return fmt.Sprintf(`func %s(t *testing.T) {
-    %s.RunPath(t, []string{%s})
+    %s.%s(t, []string{%s}%s)
 }`,
 		testFnName,
 		rootVar,
+		fnName,
 		quoteNameLit,
+		extraArgs,
 	)
 }
 
@@ -64,20 +86,31 @@ func JoinAsFuncName(names []string) string {
 func genTestCases(varName string, casePaths []TestCasePath, verbose bool) []string {
 	var genFuncs []string
 	for _, casePath := range casePaths {
-		names := make([]string, 0, len(casePath)+1)
-		names = append(names, varName)
-		for _, casePath := range casePath {
-			names = append(names, casePath.Name)
+		effectiveVariants := casePath.GetEffectiveVariants()
+		if len(effectiveVariants) > 0 {
+			// generate variants
+			for _, variant := range effectiveVariants {
+				_, fnCode := generateTestFunction(varName, casePath, variant, verbose)
+				genFuncs = append(genFuncs, fnCode)
+			}
+		} else {
+			_, fnCode := generateTestFunction(varName, casePath, nil, verbose)
+			genFuncs = append(genFuncs, fnCode)
 		}
-		testFnName := GetTestFuncName(names)
-		if verbose {
-			fmt.Printf("generate %s\n", testFnName)
-		}
-		fnCode := FormatGoFunc(testFnName, names[1:], varName)
-		// hasUpdate = true
-		// _ = fnCode
-		// _ = insertPos
-		genFuncs = append(genFuncs, PROLOG+"\n"+fnCode)
 	}
 	return genFuncs
+}
+
+func generateTestFunction(varName string, casePath TestCasePath, variant *Variant, verbose bool) (string, string) {
+	names := make([]string, 0, len(casePath)+1)
+	names = append(names, varName)
+	for _, casePath := range casePath {
+		names = append(names, casePath.Name)
+	}
+	testFnName := GetTestFuncName(names, variant)
+	if verbose {
+		fmt.Printf("generate %s\n", testFnName)
+	}
+	fnCode := FormatGoFunc(testFnName, names[1:], varName, variant)
+	return testFnName, PROLOG + "\n" + fnCode
 }
