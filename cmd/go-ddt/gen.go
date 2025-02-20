@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type TestCasePath []*TestCase
@@ -39,17 +40,56 @@ func (c TestCasePath) GetEffectiveVariants() []*Variant {
 }
 
 func GetTestFuncName(path []string, variant *Variant) string {
-	names := make([]string, 0, len(path))
+	identNames := make([]string, 0, len(path))
 	for _, name := range path {
 		if name == "" {
 			name = "Unamed"
 		}
-		names = append(names, name)
+		identName := nameToIdentifierSuffix(compactName(name))
+		identName = capitalize(identName)
+		identNames = append(identNames, identName)
 	}
-	if variant != nil {
-		names = append(names, variant.ShortestName)
+	if variant != nil && variant.ShortestName != "" {
+		identName := nameToIdentifierSuffix(compactName(variant.ShortestName))
+		identName = capitalize(identName)
+		identNames = append(identNames, identName)
 	}
-	return "Test" + JoinAsFuncName(names)
+	return "Test" + JoinAsFuncName(identNames)
+}
+
+func compactName(name string) string {
+	name = strings.ReplaceAll(name, " ", "")
+	name = strings.ReplaceAll(name, "_", "")
+	name = strings.ReplaceAll(name, "-", "")
+	return name
+}
+
+func nameToIdentifierSuffix(name string) string {
+	// Replace special characters with similar Unicode symbols that are valid Go identifiers
+	name = strings.ReplaceAll(name, ">", "ᐳ") // U+1433 CANADIAN SYLLABICS PO
+	name = strings.ReplaceAll(name, "<", "ᐸ") // U+1438 CANADIAN SYLLABICS PA
+	name = strings.ReplaceAll(name, "=", "ᗕ") // U+15D5 CANADIAN SYLLABICS CARRIER CHI
+	name = strings.ReplaceAll(name, "%", "ᵖ") // U+1D56 MODIFIER LETTER SMALL P
+	name = strings.ReplaceAll(name, "+", "ᐩ") // U+1429 CANADIAN SYLLABICS FINAL PLUS
+	name = strings.ReplaceAll(name, "-", "ˉ") // U+02C9 MODIFIER LETTER MACRON
+	name = strings.ReplaceAll(name, "*", "ˣ") // U+02E3 MODIFIER LETTER SMALL X
+	name = strings.ReplaceAll(name, "/", "ᐟ") // U+141F CANADIAN SYLLABICS FINAL ACUTE
+
+	var result strings.Builder
+	for _, ch := range name {
+		// Subsequent characters can be letters, digits, or underscore
+		if unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' {
+			result.WriteRune(ch)
+		}
+	}
+	return result.String()
+}
+
+func capitalize(name string) string {
+	if len(name) == 0 {
+		return ""
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
 }
 
 func FormatGoFunc(testFnName string, path []string, rootVar string, variant *Variant) string {
