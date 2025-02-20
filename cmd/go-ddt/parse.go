@@ -7,12 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/xhd2015/data-driven-testing/pkgs/goresolve"
 	"github.com/xhd2015/xgo/support/edit/goedit"
 )
 
 type FileEdit struct {
-	astFile *astFile
-	vars    []*TestCaseVar
+	astFile *AstFile
+	vars    goresolve.Vars
 
 	noWrite bool
 
@@ -39,31 +40,31 @@ type TestCase struct {
 }
 
 func (c *FileEdit) IsTestGo() bool {
-	return strings.HasSuffix(c.astFile.file, "_test.go")
+	return strings.HasSuffix(c.astFile.File, "_test.go")
 }
 
 func (c *FileEdit) FileName() string {
-	return c.astFile.file
+	return c.astFile.File
 }
 
-func (c *FileEdit) GetEdit(fset *token.FileSet) *goedit.Edit {
+func (c *FileEdit) GetEdit() *goedit.Edit {
 	if c.edit != nil {
 		return c.edit
 	}
-	c.edit = c.astFile.newEdit(fset)
+	c.edit = newEdit(c.astFile)
 	return c.edit
 }
 
-func (c *FileEdit) GetFileEnd(fset *token.FileSet) token.Pos {
-	return getFileEnd(fset, len(c.astFile.code), c.astFile.ast)
+func (c *FileEdit) GetFileEnd() token.Pos {
+	return c.astFile.GetFileEnd()
 }
 
-func (c *FileEdit) EditAppend(fset *token.FileSet, code string) {
+func (c *FileEdit) EditAppend(code string) {
 	if code == "" {
 		return
 	}
-	end := c.GetFileEnd(fset)
-	c.GetEdit(fset).Insert(end, code)
+	end := c.GetFileEnd()
+	c.GetEdit().Insert(end, code)
 	c.editHasUpdate = true
 }
 
@@ -75,125 +76,47 @@ func (c *FileEdit) MarkEditUpdate() {
 	c.editHasUpdate = true
 }
 
-func resolveVarRefs(vars []*TestCaseVar) error {
-	mappingByNames := make(map[string]*TestCaseVar, len(vars))
-	for _, v := range vars {
-		mappingByNames[v.VarName] = v
-	}
+type Variant struct {
+	Name string
+	Expr string
 
-	var traverse func(tc *TestCase) error
-
-	traverse = func(tc *TestCase) error {
-		refVarName := tc.RefVarName
-		if refVarName != "" {
-			refVar := mappingByNames[refVarName]
-			if refVar == nil {
-				return fmt.Errorf("%s not found", refVarName)
-			}
-			refVar.HasRef = true
-			tc.RefVar = refVar
-		}
-		for _, subCase := range tc.SubCases {
-			err := traverse(subCase)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-
-	}
-	for _, v := range vars {
-		err := traverse(v.TestCase)
-		if err != nil {
-			return fmt.Errorf("%s: %w", v.VarName, err)
-		}
-	}
-	return nil
+	ShortestName string
 }
 
-func pareFileVars(fset *token.FileSet, astFile *ast.File, code string) ([]*TestCaseVar, error) {
-	var testCaseVars []*TestCaseVar
-
-	for _, decl := range astFile.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		if genDecl.Tok != token.VAR {
-			continue
-		}
-		for _, spec := range genDecl.Specs {
-			valSpec, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			names := valSpec.Names
-			values := valSpec.Values
-			if len(names) != 1 {
-				continue
-			}
-			if len(values) != 1 {
-				continue
-			}
-
-			varName := names[0].Name
-			if varName == "" {
-				continue
-			}
-
-			var el ast.Expr = values[0]
-			if unaryExpr, ok := el.(*ast.UnaryExpr); ok && unaryExpr.Op == token.AND {
-				// deref &
-				el = unaryExpr.X
-			}
-
-			switch el := el.(type) {
-			case *ast.CompositeLit:
-				testCase, err := parseCmpositeLit(fset, el, code)
-				if err != nil {
-					return nil, fmt.Errorf("%s: %w", varName, err)
-				}
-				testCaseVars = append(testCaseVars, &TestCaseVar{
-					VarName:  varName,
-					TestCase: testCase,
-				})
-			case *ast.Ident:
-				testCaseVars = append(testCaseVars, &TestCaseVar{
-					VarName: varName,
-					TestCase: &TestCase{
-						RefVarName: el.Name,
-					},
-				})
-			default:
-				// nothing to do with
-			}
-		}
-	}
-	return testCaseVars, nil
-}
-
-func parseCmpositeLit(fset *token.FileSet, compLit *ast.CompositeLit, code string) (*TestCase, error) {
-	if compLit == nil {
+func getTestCaseVar(fset *token.FileSet, astFile *ast.File, code string, v *goresolve.Var) (*TestCaseVar, error) {
+	if v == nil {
 		return nil, nil
 	}
-	var name string
+	testCase, err := getTestCaseVarDef(fset, astFile, code, v.Def)
+	if err != nil {
+		return nil, err
+	}
+	return &TestCaseVar{
+		VarName:  v.Name,
+		HasRef:   v.HasRef,
+		TestCase: testCase,
+	}, nil
+}
+
+func getTestCaseVarDef(fset *token.FileSet, astFile *ast.File, code string, def *goresolve.Def) (*TestCase, error) {
+	if def == nil {
+		return nil, nil
+	}
 	var subCases []*TestCase
-	var hasAssert bool
+	for _, child := range def.Children {
+		subCase, err := getTestCaseVarDef(fset, astFile, code, child)
+		if err != nil {
+			return nil, err
+		}
+		subCases = append(subCases, subCase)
+	}
+	var name string
 	var variants []*Variant
-	for _, el := range compLit.Elts {
-		kv, ok := el.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		idt, ok := kv.Key.(*ast.Ident)
-		if !ok {
-			continue
-		}
-		keyName := idt.Name
-		switch keyName {
+	var hasAssert bool
+	for _, field := range def.Fields {
+		switch field.Name {
 		case "Name":
-			basicLit, ok := kv.Value.(*ast.BasicLit)
-			if ok {
+			if basicLit, ok := field.Expr.(*ast.BasicLit); ok {
 				var err error
 				name, err = strconv.Unquote(basicLit.Value)
 				if err != nil {
@@ -203,7 +126,7 @@ func parseCmpositeLit(fset *token.FileSet, compLit *ast.CompositeLit, code strin
 		case "Assert":
 			hasAssert = true
 		case "Variants":
-			variants = parseVariants(fset, kv.Value, code)
+			variants = parseVariants(fset, field.Expr, code)
 
 			names := make([]string, 0, len(variants))
 			for _, v := range variants {
@@ -213,47 +136,21 @@ func parseCmpositeLit(fset *token.FileSet, compLit *ast.CompositeLit, code strin
 			for i, v := range variants {
 				v.ShortestName = shortestNames[i]
 			}
-		case "SubCases":
-			valLit, ok := kv.Value.(*ast.CompositeLit)
-			if ok {
-				if _, ok := valLit.Type.(*ast.ArrayType); ok {
-					for _, el := range valLit.Elts {
-						p := el
-						if unary, ok := p.(*ast.UnaryExpr); ok && unary.Op == token.AND {
-							p = unary.X
-						}
-						switch p := p.(type) {
-						case *ast.CompositeLit:
-							subCase, err := parseCmpositeLit(fset, p, code)
-							if err != nil {
-								return nil, err
-							}
-							subCases = append(subCases, subCase)
-						case *ast.Ident:
-							subCases = append(subCases, &TestCase{
-								RefVarName: p.Name,
-							})
-						default:
-							return nil, fmt.Errorf("unrecognized: %T %v", p, p)
-						}
-					}
-				}
-			}
 		}
+	}
+	refVar, err := getTestCaseVar(fset, astFile, code, def.RefVar)
+	if err != nil {
+		return nil, err
 	}
 	return &TestCase{
 		Name:      name,
-		HasAssert: hasAssert,
-		SubCases:  subCases,
 		Variants:  variants,
+		SubCases:  subCases,
+		HasAssert: hasAssert,
+
+		RefVarName: def.RefVarName,
+		RefVar:     refVar,
 	}, nil
-}
-
-type Variant struct {
-	Name string
-	Expr string
-
-	ShortestName string
 }
 
 func parseVariants(fset *token.FileSet, el ast.Expr, code string) []*Variant {

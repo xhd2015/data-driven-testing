@@ -2,15 +2,17 @@ package main
 
 import (
 	"go/ast"
-	"go/token"
 	"strings"
 
 	"github.com/xhd2015/xgo/support/edit/goedit"
 )
 
-func cleanGenEdit(fset *token.FileSet, code string, astFile *ast.File, edit *goedit.Edit) bool {
+func cleanGenEdit(file *AstFile, edit *goedit.Edit) bool {
+	fset := file.Fset
+	goAst := file.Ast
+	code := file.Code
 	progLines := make(map[int]*ast.Comment)
-	for _, cmt := range astFile.Comments {
+	for _, cmt := range goAst.Comments {
 		for _, cm := range cmt.List {
 			if strings.HasPrefix(cm.Text, PROLOG) {
 				line := fset.Position(cm.Pos()).Line
@@ -20,12 +22,12 @@ func cleanGenEdit(fset *token.FileSet, code string, astFile *ast.File, edit *goe
 	}
 
 	var hasUpdate bool
-	n := len(astFile.Decls)
+	n := len(goAst.Decls)
 
-	fileEnd := getFileEnd(fset, len(code), astFile)
+	fileEnd := file.GetFileEnd()
 	var lastDelEndOffset int // avoid overlap
 	for i := 0; i < n; i++ {
-		fnDecl, ok := astFile.Decls[i].(*ast.FuncDecl)
+		fnDecl, ok := goAst.Decls[i].(*ast.FuncDecl)
 		if !ok {
 			continue
 		}

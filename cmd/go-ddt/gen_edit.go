@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/xhd2015/data-driven-testing/pkgs/goast"
+	"github.com/xhd2015/data-driven-testing/pkgs/goresolve"
 )
 
 func processGoFiles(dir string, verbose bool, singleFile string, dryRun bool) error {
@@ -42,7 +45,7 @@ func processGoFiles(dir string, verbose bool, singleFile string, dryRun bool) er
 		if !fileEdit.IsTestGo() {
 			continue
 		}
-		if cleanGenEdit(fset, astFile.code, astFile.ast, fileEdit.GetEdit(fset)) {
+		if cleanGenEdit(astFile, fileEdit.GetEdit()) {
 			fileEdit.MarkEditUpdate()
 		}
 	}
@@ -57,7 +60,10 @@ func processGoFiles(dir string, verbose bool, singleFile string, dryRun bool) er
 
 	// generate test cases to their target file
 	for _, fileEdit := range fileEdits {
-		generateTestCasesForFile(fset, fileEdit, verbose)
+		err := generateTestCasesForFile(fset, fileEdit, verbose)
+		if err != nil {
+			return err
+		}
 	}
 
 	// write files
@@ -78,7 +84,7 @@ func processGoFiles(dir string, verbose bool, singleFile string, dryRun bool) er
 			fmt.Printf("updating %s\n", fileName)
 		}
 		if !dryRun {
-			code := fileEdit.GetEdit(fset).String()
+			code := fileEdit.GetEdit().String()
 			err = os.WriteFile(filepath.Join(dir, fileName), []byte(code), 0755)
 			if err != nil {
 				return err
@@ -105,7 +111,7 @@ func findGoFiles(dir string) ([]string, error) {
 }
 
 func parseFileEdits(fset *token.FileSet, dir string, files []string) ([]*FileEdit, error) {
-	astFiles, err := ParseFiles(fset, dir, files)
+	astFiles, err := goast.ParseFiles(fset, dir, files)
 	if err != nil {
 		return nil, err
 	}
@@ -122,22 +128,21 @@ func parseAndResolveVars(fset *token.FileSet, fileEdits []*FileEdit) error {
 	// parse test vars
 	for _, fileEdit := range fileEdits {
 		astFile := fileEdit.astFile
-		astFileVars, err := pareFileVars(fset, astFile.ast, fileEdit.astFile.code)
+		astFileVars, err := goresolve.ParseVars(fset, astFile.Ast, fileEdit.astFile.Code, "SubCases")
 		if err != nil {
 			return err
 		}
 		fileEdit.vars = astFileVars
 	}
 	// resolve vars
-	var allVars []*TestCaseVar
+	var allVars goresolve.Vars
 	for _, fileEdit := range fileEdits {
 		allVars = append(allVars, fileEdit.vars...)
 	}
-	resolveVarRefs(allVars)
-	return nil
+	return allVars.ResolveRefs()
 }
 
-func generateTestCasesForFile(fset *token.FileSet, fileEdit *FileEdit, verbose bool) {
+func generateTestCasesForFile(fset *token.FileSet, fileEdit *FileEdit, verbose bool) error {
 	targetFile := fileEdit.TargetFile
 	if targetFile == nil {
 		// itself
@@ -148,7 +153,11 @@ func generateTestCasesForFile(fset *token.FileSet, fileEdit *FileEdit, verbose b
 		if vr.HasRef {
 			continue
 		}
-		varGenFuncs := genTestCases(vr.VarName, vr.TestCase.getAllCases(nil), verbose)
+		testVar, err := getTestCaseVar(fset, fileEdit.astFile.Ast, fileEdit.astFile.Code, vr)
+		if err != nil {
+			return err
+		}
+		varGenFuncs := genTestCases(testVar.VarName, testVar.TestCase.getAllCases(nil), verbose)
 		for i, genFunc := range varGenFuncs {
 			if genFunc == "" {
 				continue
@@ -157,7 +166,7 @@ func generateTestCasesForFile(fset *token.FileSet, fileEdit *FileEdit, verbose b
 			if i < len(varGenFuncs)-1 {
 				suffix = "\n"
 			}
-			targetFile.EditAppend(fset, "\n"+genFunc+suffix)
+			targetFile.EditAppend("\n" + genFunc + suffix)
 			needImportTesting = true
 		}
 	}
@@ -167,12 +176,13 @@ func generateTestCasesForFile(fset *token.FileSet, fileEdit *FileEdit, verbose b
 		}
 		importPkg(fset, targetFile, "testing")
 	}
+	return nil
 }
 
 func correspondTargetEditFiles(fset *token.FileSet, dir string, fileEdits []*FileEdit) (generatedFiles []*FileEdit, err error) {
 	fileEditMapping := make(map[string]*FileEdit, len(fileEdits))
 	for _, fileEdit := range fileEdits {
-		fileEditMapping[fileEdit.astFile.file] = fileEdit
+		fileEditMapping[fileEdit.astFile.File] = fileEdit
 	}
 
 	// generate placeholder files for each var
@@ -185,9 +195,9 @@ func correspondTargetEditFiles(fset *token.FileSet, dir string, fileEdits []*Fil
 		testGoFile := strings.TrimSuffix(fileName, ".go") + "_test.go"
 		targetFile = fileEditMapping[testGoFile]
 		if targetFile == nil {
-			pkgName := fileEdit.astFile.ast.Name.Name
+			pkgName := fileEdit.astFile.Ast.Name.Name
 			testCode := fmt.Sprintf("package %s\n", pkgName)
-			testGoAst, err := ParseCode(fset, dir, testGoFile, testCode)
+			testGoAst, err := goast.ParseCode(fset, dir, testGoFile, testCode)
 			if err != nil {
 				return nil, err
 			}
@@ -206,7 +216,7 @@ func correspondTargetEditFiles(fset *token.FileSet, dir string, fileEdits []*Fil
 
 func importPkg(fset *token.FileSet, fileEdit *FileEdit, pkg string) {
 	pkgQuote := strconv.Quote(pkg)
-	astFile := fileEdit.astFile.ast
+	astFile := fileEdit.astFile.Ast
 
 	// Check if testing is already imported
 	for _, imp := range astFile.Imports {
@@ -234,7 +244,7 @@ func importPkg(fset *token.FileSet, fileEdit *FileEdit, pkg string) {
 			insertPos = lastImportDecl.End()
 			importStmt = fmt.Sprintf("import (\n\t%s\n\t%s\n)", lastImportDecl.Specs[0].(*ast.ImportSpec).Path.Value, pkgQuote)
 			// Delete the original import
-			edit := fileEdit.GetEdit(token.NewFileSet())
+			edit := fileEdit.GetEdit()
 			edit.Delete(lastImportDecl.Pos(), lastImportDecl.End())
 		} else {
 			// Already has parentheses
@@ -248,10 +258,10 @@ func importPkg(fset *token.FileSet, fileEdit *FileEdit, pkg string) {
 				// Get the indentation from the last import
 				lastImportOffset := fset.Position(lastImportPos).Offset
 				lineStart := lastImportOffset
-				for lineStart > 0 && fileEdit.astFile.code[lineStart-1] != '\n' {
+				for lineStart > 0 && fileEdit.astFile.Code[lineStart-1] != '\n' {
 					lineStart--
 				}
-				indent := fileEdit.astFile.code[lineStart:lastImportOffset]
+				indent := fileEdit.astFile.Code[lineStart:lastImportOffset]
 				importStmt = fmt.Sprintf("%s%s\n", indent, pkgQuote)
 			} else {
 				importStmt = fmt.Sprintf("\t%s\n", pkgQuote)
@@ -264,7 +274,7 @@ func importPkg(fset *token.FileSet, fileEdit *FileEdit, pkg string) {
 	}
 
 	// Add the import
-	edit := fileEdit.GetEdit(fset)
+	edit := fileEdit.GetEdit()
 	edit.Insert(insertPos, importStmt)
 	fileEdit.MarkEditUpdate()
 }
