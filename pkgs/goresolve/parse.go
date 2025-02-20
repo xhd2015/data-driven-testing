@@ -41,27 +41,43 @@ func ParseVars(fset *token.FileSet, astFile *ast.File, code string, childrenKey 
 				// deref &
 				el = unaryExpr.X
 			}
+			var parseDefOrRef func(el ast.Expr) (*Def, error)
+			parseDefOrRef = func(el ast.Expr) (*Def, error) {
+				switch el := el.(type) {
+				case *ast.CompositeLit:
+					if _, ok := el.Type.(*ast.ArrayType); ok {
 
-			switch el := el.(type) {
-			case *ast.CompositeLit:
-				def, err := parseVarCmpositeLit(fset, el, code, childrenKey)
-				if err != nil {
-					return nil, fmt.Errorf("%s: %w", varName, err)
-				}
-				vars = append(vars, &Var{
-					Name: varName,
-					Def:  def,
-				})
-			case *ast.Ident:
-				vars = append(vars, &Var{
-					Name: varName,
-					Def: &Def{
+						// the variable itself is a slice
+						var children []*Def
+						for _, child := range el.Elts {
+							childDef, err := parseDefOrRef(child)
+							if err != nil {
+								return nil, fmt.Errorf("%w", err)
+							}
+							children = append(children, childDef)
+						}
+						return &Def{
+							Children: children,
+						}, nil
+					}
+					return parseVarCmpositeLit(fset, el, code, childrenKey)
+				case *ast.Ident:
+					return &Def{
 						RefVarName: el.Name,
-					},
-				})
-			default:
-				// nothing to do with
+					}, nil
+				default:
+					// nothing to do with
+					return nil, nil
+				}
 			}
+			def, err := parseDefOrRef(el)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", varName, err)
+			}
+			vars = append(vars, &Var{
+				Name: varName,
+				Def:  def,
+			})
 		}
 	}
 	return vars, nil
