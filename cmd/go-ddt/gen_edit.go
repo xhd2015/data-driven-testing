@@ -132,6 +132,7 @@ func parseAndResolveVars(fset *token.FileSet, fileEdits []*FileEdit) error {
 		if err != nil {
 			return err
 		}
+		astFileVars = astFileVars.FilterEmptyDef()
 		fileEdit.vars = astFileVars
 	}
 	// resolve vars

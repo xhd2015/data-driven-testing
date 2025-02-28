@@ -2,6 +2,23 @@ package goresolve
 
 import "fmt"
 
+// example or empty vars:
+// var (
+//
+//	A      = int64(1)
+//	B      = "1"
+//
+// )
+func (vars Vars) FilterEmptyDef() Vars {
+	var filteredVars Vars
+	for _, v := range vars {
+		if v.Def == nil {
+			continue
+		}
+		filteredVars = append(filteredVars, v)
+	}
+	return filteredVars
+}
 func (vars Vars) ResolveRefs() error {
 	mappingByNames := make(map[string]*Var, len(vars))
 	for _, v := range vars {
