@@ -40,11 +40,49 @@ func DefaultOptions() VisualizationOptions {
 	}
 }
 
-// VisualizeStateMachine generates a text-based visualization of a state machine
+// RenderAllPassed generates a visualization where all states are marked as passed,
+// using default visualization options. This is the simplest API for state machine visualization.
+//
+// Parameters:
+// - sm: The state machine to visualize. Can be any type of StateMachine[T].
+//
+// Returns:
+// - string: A formatted string representation of the state machine diagram with all states marked as passed
+func RenderAllPassed[T any](sm *state_machine.StateMachine[T]) string {
+	return RenderAllPassedOptions(sm, DefaultOptions())
+}
+
+// RenderAllPassedOptions generates a visualization where all states are marked as passed.
+// This is a simplified API for VisualizeStateMachine that marks all states as passed.
+//
+// Parameters:
+// - sm: The state machine to visualize. Can be any type of StateMachine[T].
+// - options: Visualization options
+//
+// Returns:
+// - string: A formatted string representation of the state machine diagram with all states marked as passed
+func RenderAllPassedOptions[T any](sm *state_machine.StateMachine[T], options VisualizationOptions) string {
+	// Extract all state names from the state machine
+	allStateNames := make([]string, 0, len(sm.States))
+	for _, state := range sm.States {
+		allStateNames = append(allStateNames, state.Name)
+	}
+
+	// Call the main visualization function with all states marked as passed
+	return Render(
+		sm,
+		allStateNames, // All states are passed
+		[]string{},    // No failed states
+		"",            // No failed transition
+		options,
+	)
+}
+
+// Render generates a text-based visualization of a state machine
 // with color-coded states based on their status.
 //
 // Parameters:
-// - sm: The state machine to visualize
+// - sm: The state machine to visualize. Can be any type of StateMachine[T].
 // - passedStates: Slice of state names that have been successfully traversed
 // - failedStates: Slice of state names that failed during traversal
 // - failedTransition: Optional name of the transition/event that failed
@@ -52,13 +90,7 @@ func DefaultOptions() VisualizationOptions {
 //
 // Returns:
 // - string: A formatted string representation of the state machine diagram
-func VisualizeStateMachine(
-	sm *state_machine.AnyMapStateMachine,
-	passedStates []string,
-	failedStates []string,
-	failedTransition string,
-	options VisualizationOptions,
-) string {
+func Render[T any](sm *state_machine.StateMachine[T], passedStates []string, failedStates []string, failedTransition string, options VisualizationOptions) string {
 	var sb strings.Builder
 
 	// Add header
@@ -140,7 +172,7 @@ func VisualizeStateMachine(
 }
 
 // buildGraph creates a graph representation of the state machine for easier traversal
-func buildGraph(sm *state_machine.AnyMapStateMachine) map[string]map[string]string {
+func buildGraph[T any](sm *state_machine.StateMachine[T]) map[string]map[string]string {
 	graph := make(map[string]map[string]string)
 
 	// Initialize the adjacency list for each state
@@ -157,7 +189,7 @@ func buildGraph(sm *state_machine.AnyMapStateMachine) map[string]map[string]stri
 }
 
 // getSortedStateIDs returns state IDs sorted in a logical order for visualization
-func getSortedStateIDs(sm *state_machine.AnyMapStateMachine, graph map[string]map[string]string, failedTransition string) []string {
+func getSortedStateIDs[T any](sm *state_machine.StateMachine[T], graph map[string]map[string]string, failedTransition string) []string {
 	// Find the initial state
 	var initialStateID string
 	for id, state := range sm.States {
@@ -227,9 +259,9 @@ func getSortedStateIDs(sm *state_machine.AnyMapStateMachine, graph map[string]ma
 }
 
 // generateUnicodeVisualization generates a Unicode-based visualization
-func generateUnicodeVisualization(
+func generateUnicodeVisualization[T any](
 	sb *strings.Builder,
-	sm *state_machine.AnyMapStateMachine,
+	sm *state_machine.StateMachine[T],
 	graph map[string]map[string]string,
 	stateStatus map[string]string,
 	failedTransition string,
@@ -283,9 +315,9 @@ func generateUnicodeVisualization(
 }
 
 // generateASCIIVisualization generates an ASCII-based visualization
-func generateASCIIVisualization(
+func generateASCIIVisualization[T any](
 	sb *strings.Builder,
-	sm *state_machine.AnyMapStateMachine,
+	sm *state_machine.StateMachine[T],
 	graph map[string]map[string]string,
 	stateStatus map[string]string,
 	failedTransition string,
@@ -399,4 +431,166 @@ func formatTransitionASCII(event string, isFailed bool, options VisualizationOpt
 		return fmt.Sprintf("--%s(FAILED)--> ", event)
 	}
 	return fmt.Sprintf("--%s--> ", event)
+}
+
+// RenderFailedOptions generates a visualization by automatically determining
+// passed states and failed states based on a failed transition.
+//
+// Parameters:
+// - sm: The state machine to visualize
+// - failedTransition: The name of the transition that failed
+// - options: Optional visualization options
+//
+// Returns:
+// - string: A formatted string representation of the state machine diagram
+func RenderFailedOptions[T any](
+	sm *state_machine.StateMachine[T],
+	failedTransition string,
+	options VisualizationOptions,
+) string {
+	// Use default options if not specified
+	if (options == VisualizationOptions{}) {
+		options = DefaultOptions()
+	}
+
+	// If no failed transition specified, just render all states as passed
+	if failedTransition == "" {
+		return RenderAllPassedOptions(sm, options)
+	}
+
+	// Find the failed transition in the state machine
+	var fromStateID, toStateID string
+	found := false
+
+	for _, t := range sm.Transitions {
+		if t.Event == failedTransition {
+			fromStateID = t.From
+			toStateID = t.To
+			found = true
+			break
+		}
+	}
+
+	// If the transition wasn't found, just render all states as passed
+	if !found {
+		return RenderAllPassedOptions(sm, options)
+	}
+
+	// Find the initial state
+	var initialStateID string
+	for id, state := range sm.States {
+		if state.IsInitial {
+			initialStateID = id
+			break
+		}
+	}
+
+	// If no initial state found, just render with the failed transition
+	if initialStateID == "" {
+		return Render(
+			sm,
+			[]string{},          // No passed states
+			[]string{toStateID}, // Mark the target state as failed
+			failedTransition,
+			options,
+		)
+	}
+
+	// Trace the execution path from the initial state to the source of the failed transition
+	passedStateIDs := traceExecutionPath(sm, initialStateID, fromStateID)
+
+	// Convert state IDs to state names for the Render function
+	passedStateNames := make([]string, 0, len(passedStateIDs))
+	for _, id := range passedStateIDs {
+		if state, exists := sm.States[id]; exists {
+			passedStateNames = append(passedStateNames, state.Name)
+		}
+	}
+
+	// Get the target state name
+	var failedStateName string
+	if targetState, exists := sm.States[toStateID]; exists {
+		failedStateName = targetState.Name
+	}
+
+	// Call the existing Render function with the computed states
+	return Render(
+		sm,
+		passedStateNames,
+		[]string{failedStateName},
+		failedTransition,
+		options,
+	)
+}
+
+// RenderFailed is a convenience function that visualizes a state machine with a failed transition
+// using default visualization options. This is the simplest API for visualizing a failed transition.
+//
+// Parameters:
+// - sm: The state machine to visualize
+// - failedTransition: The name of the transition that failed
+//
+// Returns:
+// - string: A formatted string representation of the state machine diagram
+func RenderFailed[T any](sm *state_machine.StateMachine[T], failedTransition string) string {
+	return RenderFailedOptions(sm, failedTransition, DefaultOptions())
+}
+
+// traceExecutionPath performs a breadth-first search from the initial state to the target state,
+// returning a slice of state IDs that would be traversed in the path.
+func traceExecutionPath[T any](
+	sm *state_machine.StateMachine[T],
+	initialStateID string,
+	targetStateID string,
+) []string {
+	// If the initial state is the target, just return it
+	if initialStateID == targetStateID {
+		return []string{initialStateID}
+	}
+
+	// Build a graph representation for traversal
+	graph := make(map[string]map[string]bool)
+	for _, t := range sm.Transitions {
+		if _, exists := graph[t.From]; !exists {
+			graph[t.From] = make(map[string]bool)
+		}
+		graph[t.From][t.To] = true
+	}
+
+	// Queue for BFS traversal
+	queue := []string{initialStateID}
+
+	// Track visited states and paths
+	visited := make(map[string]bool)
+	visited[initialStateID] = true
+
+	// Track parent states to reconstruct the path
+	parent := make(map[string]string)
+
+	// Perform BFS
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		// If we found the target state, reconstruct the path
+		if current == targetStateID {
+			path := []string{current}
+			for state := parent[current]; state != ""; state = parent[state] {
+				path = append([]string{state}, path...)
+			}
+			return path
+		}
+
+		// Explore neighbors
+		for neighbor := range graph[current] {
+			if !visited[neighbor] {
+				visited[neighbor] = true
+				parent[neighbor] = current
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+
+	// If no path was found, just return the initial state
+	return []string{initialStateID}
 }
