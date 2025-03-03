@@ -277,6 +277,49 @@ func (sm *StateMachine[T]) ToMermaid() string {
 	return sb.String()
 }
 
+// ToPlantUML generates a PlantUML representation of the state machine
+func (sm *StateMachine[T]) ToPlantUML() string {
+	var sb strings.Builder
+
+	sb.WriteString("@startuml\n")
+
+	// Add title based on state machine name
+	sb.WriteString(fmt.Sprintf("title %s\n\n", sm.Name))
+
+	// Add initial states
+	for id, state := range sm.States {
+		if state.IsInitial {
+			sb.WriteString(fmt.Sprintf("[*] --> %s\n", id))
+		}
+	}
+
+	// Add states with their properties
+	for id, state := range sm.States {
+		// Add state with name as label
+		sb.WriteString(fmt.Sprintf("state \"%s\" as %s", state.Name, id))
+
+		// Add description if available
+		if state.Description != "" {
+			sb.WriteString(fmt.Sprintf(" : %s", state.Description))
+		}
+
+		sb.WriteString("\n")
+
+		// Add final state transitions
+		if state.IsFinal {
+			sb.WriteString(fmt.Sprintf("%s --> [*]\n", id))
+		}
+	}
+
+	// Add transitions between states
+	for _, t := range sm.Transitions {
+		sb.WriteString(fmt.Sprintf("%s --> %s : %s\n", t.From, t.To, t.Event))
+	}
+
+	sb.WriteString("@enduml\n")
+	return sb.String()
+}
+
 // For backward compatibility
 type AnyMapStateMachine = StateMachine[map[string]interface{}]
 

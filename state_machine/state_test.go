@@ -2,6 +2,7 @@ package state_machine
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -486,6 +487,86 @@ func TestVisualization(t *testing.T) {
 
 	if !strings.Contains(mermaid, "[*] --> s1") {
 		t.Errorf("Mermaid output missing initial state marker")
+	}
+}
+
+func TestToPlantUML(t *testing.T) {
+	// Create test state machine
+	states := map[string]*State{
+		"s1": {
+			ID:          "s1",
+			Name:        "Start",
+			Description: "Initial state",
+			IsInitial:   true,
+			Data:        make(map[string]interface{}),
+		},
+		"s2": {
+			ID:          "s2",
+			Name:        "Processing",
+			Description: "Processing state",
+			Data:        make(map[string]interface{}),
+		},
+		"s3": {
+			ID:          "s3",
+			Name:        "End",
+			Description: "Final state",
+			IsFinal:     true,
+			Data:        make(map[string]interface{}),
+		},
+	}
+
+	transitions := []Transition[VisualizationContext]{
+		{
+			From:  "s1",
+			To:    "s2",
+			Event: "start",
+		},
+		{
+			From:  "s2",
+			To:    "s3",
+			Event: "finish",
+		},
+		{
+			From:  "s2",
+			To:    "s1",
+			Event: "reset",
+		},
+	}
+
+	sm := NewStateMachine[VisualizationContext]("plantuml-test", states, transitions)
+
+	// Test PlantUML output
+	plantuml := sm.ToPlantUML()
+
+	fmt.Println(plantuml)
+
+	// Check for required elements in the PlantUML output
+	if !strings.Contains(plantuml, "@startuml") {
+		t.Errorf("PlantUML output missing start tag")
+	}
+
+	if !strings.Contains(plantuml, "@enduml") {
+		t.Errorf("PlantUML output missing end tag")
+	}
+
+	if !strings.Contains(plantuml, "title plantuml-test") {
+		t.Errorf("PlantUML output missing title")
+	}
+
+	if !strings.Contains(plantuml, "[*] --> s1") {
+		t.Errorf("PlantUML output missing initial state marker")
+	}
+
+	if !strings.Contains(plantuml, "state \"Start\" as s1 : Initial state") {
+		t.Errorf("PlantUML output missing state with description")
+	}
+
+	if !strings.Contains(plantuml, "s3 --> [*]") {
+		t.Errorf("PlantUML output missing final state marker")
+	}
+
+	if !strings.Contains(plantuml, "s1 --> s2 : start") {
+		t.Errorf("PlantUML output missing transition representation")
 	}
 }
 
