@@ -229,8 +229,9 @@ func (sm *StateMachine[T]) ToDOT() string {
 	sb.WriteString("  rankdir=LR;\n")
 	sb.WriteString("  node [shape=circle];\n")
 
-	// Add states
-	for id, state := range sm.States {
+	// Add states using sorted order for consistent rendering
+	sortedStates := sm.SortedStates()
+	for _, state := range sortedStates {
 		shape := "circle"
 		if state.IsInitial {
 			shape = "doublecircle"
@@ -238,7 +239,7 @@ func (sm *StateMachine[T]) ToDOT() string {
 		if state.IsFinal {
 			shape = "doublecircle"
 		}
-		sb.WriteString(fmt.Sprintf("  %s [shape=%s, label=\"%s\"];\n", id, shape, state.Name))
+		sb.WriteString(fmt.Sprintf("  %s [shape=%s, label=\"%s\"];\n", state.ID, shape, state.Name))
 	}
 
 	// Add transitions
@@ -250,22 +251,23 @@ func (sm *StateMachine[T]) ToDOT() string {
 	return sb.String()
 }
 
-// ToMermaid generates a Mermaid representation of the state machine
+// ToMermaid generates a Mermaid.js representation of the state machine
 func (sm *StateMachine[T]) ToMermaid() string {
 	var sb strings.Builder
 
 	sb.WriteString("stateDiagram-v2\n")
 
-	// Add states with names as comments
-	for id, state := range sm.States {
+	// Add states using the sorted order
+	sortedStates := sm.SortedStates()
+	for _, state := range sortedStates {
 		// Add a comment with the state name for clarity
-		sb.WriteString(fmt.Sprintf("  %s: %s\n", id, state.Name))
+		sb.WriteString(fmt.Sprintf("  %s: %s\n", state.ID, state.Name))
 
 		if state.IsInitial {
-			sb.WriteString(fmt.Sprintf("  [*] --> %s\n", id))
+			sb.WriteString(fmt.Sprintf("  [*] --> %s\n", state.ID))
 		}
 		if state.IsFinal {
-			sb.WriteString(fmt.Sprintf("  %s --> [*]\n", id))
+			sb.WriteString(fmt.Sprintf("  %s --> [*]\n", state.ID))
 		}
 	}
 
@@ -277,6 +279,57 @@ func (sm *StateMachine[T]) ToMermaid() string {
 	return sb.String()
 }
 
+// SortedStates returns states in a topological order starting from initial states.
+// This ensures consistent visualization output regardless of Go's map iteration order.
+func (sm *StateMachine[T]) SortedStates() []*State {
+	// Prepare result slice
+	sorted := make([]*State, 0, len(sm.States))
+	visited := make(map[string]bool)
+
+	// Build adjacency list from transitions
+	adjacencyList := make(map[string][]string)
+	for _, t := range sm.Transitions {
+		adjacencyList[t.From] = append(adjacencyList[t.From], t.To)
+	}
+
+	// First collect initial states
+	initialStates := make([]string, 0)
+	for id, state := range sm.States {
+		if state.IsInitial {
+			initialStates = append(initialStates, id)
+			sorted = append(sorted, state)
+			visited[id] = true
+		}
+	}
+
+	// Breadth-first traversal from initial states
+	queue := initialStates
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+
+		// Add all unvisited neighbors to queue
+		for _, neighborID := range adjacencyList[currentID] {
+			if !visited[neighborID] {
+				if state, exists := sm.States[neighborID]; exists {
+					sorted = append(sorted, state)
+					visited[neighborID] = true
+					queue = append(queue, neighborID)
+				}
+			}
+		}
+	}
+
+	// Add any remaining states that weren't reachable from initial states
+	for id, state := range sm.States {
+		if !visited[id] {
+			sorted = append(sorted, state)
+		}
+	}
+
+	return sorted
+}
+
 // ToPlantUML generates a PlantUML representation of the state machine
 func (sm *StateMachine[T]) ToPlantUML() string {
 	var sb strings.Builder
@@ -286,32 +339,34 @@ func (sm *StateMachine[T]) ToPlantUML() string {
 	// Add title based on state machine name
 	sb.WriteString(fmt.Sprintf("title %s\n\n", sm.Name))
 
+	// Use sorted states for consistent rendering
+	sortedStates := sm.SortedStates()
+
 	// Add initial states
-	for id, state := range sm.States {
+	for _, state := range sortedStates {
 		if state.IsInitial {
-			sb.WriteString(fmt.Sprintf("[*] --> %s\n", id))
+			sb.WriteString(fmt.Sprintf("[*] --> %s\n", state.ID))
 		}
 	}
 
-	// Add states with their properties
-	for id, state := range sm.States {
-		// Add state with name as label
-		sb.WriteString(fmt.Sprintf("state \"%s\" as %s", state.Name, id))
-
-		// Add description if available
-		if state.Description != "" {
-			sb.WriteString(fmt.Sprintf(" : %s", state.Description))
+	// Add all states with their descriptions
+	for _, state := range sortedStates {
+		// Only add description if the state has a name
+		if state.Name != "" {
+			sb.WriteString(fmt.Sprintf("state \"%s\" as %s", state.Name, state.ID))
+			if state.Description != "" {
+				sb.WriteString(fmt.Sprintf(" : %s", state.Description))
+			}
+			sb.WriteString("\n")
 		}
 
-		sb.WriteString("\n")
-
-		// Add final state transitions
+		// Mark final states
 		if state.IsFinal {
-			sb.WriteString(fmt.Sprintf("%s --> [*]\n", id))
+			sb.WriteString(fmt.Sprintf("%s --> [*]\n", state.ID))
 		}
 	}
 
-	// Add transitions between states
+	// Add all transitions
 	for _, t := range sm.Transitions {
 		sb.WriteString(fmt.Sprintf("%s --> %s : %s\n", t.From, t.To, t.Event))
 	}
