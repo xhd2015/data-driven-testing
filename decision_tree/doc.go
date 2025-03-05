@@ -25,4 +25,5 @@
 // - [ ] Add extra legend
 // - [ ] Adjust font size for conditions
 // - [ ] Make terminal node size more appropriate
+// - [ ] go-ddt supports rendering decision tree via server(live modification): go-ddt edit decision.dtree.json
 package decision_tree

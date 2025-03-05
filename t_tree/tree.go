@@ -210,9 +210,19 @@ func (c *Tree[Q, R, TC]) runPath(t testing_ctx.T, nodePath []*Node[Q, R, TC]) {
 	}
 
 	resp, err := runner(tctx, req)
-	for i := 0; i < n; i++ {
-		if nodePath[i].Assert != nil {
-			nodePath[i].Assert(t, tctx, req, resp, err)
+	// check the assert chain until inherit is false
+	var asserts []func(t testing_ctx.T, tctx *TC, req *Q, resp *R, err error)
+	for i := n - 1; i >= 0; i-- {
+		nd := nodePath[i]
+		if nd.Assert != nil {
+			asserts = append(asserts, nd.Assert)
 		}
+		if !nd.InheritAssert {
+			break
+		}
+	}
+
+	for i := len(asserts) - 1; i >= 0; i-- {
+		asserts[i](t, tctx, req, resp, err)
 	}
 }
