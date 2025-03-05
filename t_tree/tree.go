@@ -136,7 +136,7 @@ func (c *Tree[Q, R, TC]) run(t testing_ctx.T, nodePath []*Node[Q, R, TC]) {
 	node := nodePath[len(nodePath)-1]
 	id := node.ID
 	t.Run(id, func(t testing_ctx.T) {
-		if node.Assert != nil {
+		if node.Assert != nil || node.AssertSelf != nil {
 			c.runPath(t, nodePath)
 		}
 		for _, child := range node.Children {
@@ -224,5 +224,8 @@ func (c *Tree[Q, R, TC]) runPath(t testing_ctx.T, nodePath []*Node[Q, R, TC]) {
 
 	for i := len(asserts) - 1; i >= 0; i-- {
 		asserts[i](t, tctx, req, resp, err)
+	}
+	if nodePath[n-1].AssertSelf != nil {
+		nodePath[n-1].AssertSelf(t, tctx, req, resp, err)
 	}
 }
