@@ -13,3 +13,5 @@
 cover*.out
 
 /tmp
+/decision_tree/examples/tree*.svg
+/decision_tree/examples/tree*.json
