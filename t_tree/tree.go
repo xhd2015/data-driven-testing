@@ -54,11 +54,6 @@ func Build[Q any, R any, TC any](root *Node[Q, R, TC], nodes []*Node[Q, R, TC]) 
 		return nil
 	}
 
-	err := buildIDMapping(&Node[Q, R, TC]{Children: allNodes})
-	if err != nil {
-		return nil, err
-	}
-
 	// deep copy all nodes for modification
 	buildingNodeToInternalNode := make(map[*Node[Q, R, TC]]*Node[Q, R, TC])
 	var copyNode func(node *Node[Q, R, TC]) *Node[Q, R, TC]
@@ -73,21 +68,42 @@ func Build[Q any, R any, TC any](root *Node[Q, R, TC], nodes []*Node[Q, R, TC]) 
 	}
 
 	copiedNodes := copyNode(&Node[Q, R, TC]{Children: allNodes})
+	err := buildIDMapping(copiedNodes)
+	if err != nil {
+		return nil, err
+	}
 
 	buildingRoot := copiedNodes.Children[0]
 
 	// build parent-child relation on flat nodes
 	for _, node := range copiedNodes.Children[1:] {
-		if node.ParentID == "" {
-			buildingRoot.Children = append(buildingRoot.Children, node)
-			continue
+		var nodeParent *Node[Q, R, TC]
+		if node.ParentID == "" && node.ParentNode == nil {
+			nodeParent = buildingRoot
+		} else {
+			var nodeParentByID *Node[Q, R, TC]
+			var nodeParentByNode *Node[Q, R, TC]
+			if node.ParentID != "" {
+				var ok bool
+				nodeParentByID, ok = nameMapping[node.ParentID]
+				if !ok {
+					return nil, fmt.Errorf("missing parent for: %s(%s), parentID: %s", node.ID, node.Description, node.ParentID)
+				}
+				nodeParent = nodeParentByID
+			}
+			if node.ParentNode != nil {
+				nodeParentByNode = buildingNodeToInternalNode[node.ParentNode]
+				if nodeParentByNode == nil {
+					return nil, fmt.Errorf("missing parent for: %s(%s)", node.ID, node.Description)
+				}
+				nodeParent = nodeParentByNode
+			}
+			// if both are set, they must much
+			if nodeParentByID != nil && nodeParentByNode != nil && nodeParentByID != nodeParentByNode {
+				return nil, fmt.Errorf("parent mismatch for: %s(%s), parentID: %s, parentNode: %s", node.ID, node.Description, node.ParentID, node.ParentNode.ID)
+			}
 		}
-		parent, ok := nameMapping[node.ParentID]
-		if !ok {
-			// TODO: add code source information
-			return nil, fmt.Errorf("missing parent: %s", node.ParentID)
-		}
-		parent.Children = append(parent.Children, node)
+		nodeParent.Children = append(nodeParent.Children, node)
 	}
 
 	tree := &Tree[Q, R, TC]{Root: buildingRoot}

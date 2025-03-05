@@ -8,8 +8,10 @@ import "github.com/xhd2015/data-driven-testing/testing_ctx"
 // TC: testing context
 type Node[Q any, R any, TC any] struct {
 	ID          string
-	ParentID    string // only required in detached mode
+	ParentID    string          // only required in detached mode
+	ParentNode  *Node[Q, R, TC] // optional with ParentID. If both set, they must match
 	Description string
+	Tags        []string // for grouping
 
 	Run    func(tctx *TC, req *Q) (*R, error)
 	Setup  func(tctx *TC, req *Q) (*TC, *Q)
