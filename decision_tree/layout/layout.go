@@ -8,28 +8,38 @@ import (
 
 // LayoutNode represents a node with layout information
 type LayoutNode struct {
-	Node         *decision_tree.Node
-	X, Y         float64 // Final coordinates
-	Width        float64 // Node width based on text
-	Height       float64 // Node height
-	Level        int     // Tree depth level
-	SubtreeWidth float64 // Width of entire subtree
-	Parent       *LayoutNode
-	Children     []*LayoutNode // Layout-specific children
-	Style        *decision_tree.NodeStyle
+	Node      *decision_tree.Node
+	X, Y      float64 // Final coordinates
+	Width     float64 // Node width based on text
+	Height    float64 // Node height
+	Level     int     // Tree depth level
+	LeafCount int     // Number of leaf nodes under this node
+	Parent    *LayoutNode
+	Children  []*LayoutNode // Layout-specific children
+	Style     *decision_tree.NodeStyle
+	IsLeaf    bool // Whether this is a leaf node
+	LeafIndex int  // Sequential index for leaf nodes
+}
+
+// LevelInfo holds information about nodes at a specific level
+type LevelInfo struct {
+	nodes     []*LayoutNode
+	leafCount int     // Total number of leaf nodes at this level
+	width     float64 // Total width required for this level
 }
 
 // Engine handles the layout calculation
 type Engine struct {
 	config       *decision_tree.Config
-	centerParent bool // when true, centers parent nodes over their children
+	centerParent bool
+	leafNodes    []*LayoutNode // All leaf nodes in left-to-right order
 }
 
 // NewEngine creates a new layout engine
 func NewEngine(config *decision_tree.Config) *Engine {
 	return &Engine{
 		config:       config,
-		centerParent: true, // default to true for backward compatibility
+		centerParent: true,
 	}
 }
 
@@ -40,51 +50,40 @@ func (e *Engine) SetCenterParent(center bool) {
 
 // CalculateLayout computes the layout for the entire tree
 func (e *Engine) CalculateLayout(root *decision_tree.Node) *LayoutNode {
-	// Create layout tree
-	layoutRoot := e.createLayoutTree(root, nil, 0)
+	if root == nil {
+		return nil
+	}
 
-	// First pass: calculate sizes and subtree widths
-	e.calculateSizes(layoutRoot)
+	e.leafNodes = nil // Reset leaf nodes
 
-	// Second pass: assign coordinates starting from left
-	initialX := 50.0 // Fixed left margin
-	e.assignCoordinates(layoutRoot, initialX, 0)
+	// Create initial layout tree
+	layoutRoot := e.createBasicLayoutTree(root, nil, 0)
+
+	// Collect and index leaf nodes
+	e.collectLeafNodes(layoutRoot)
+
+	// Group nodes by level
+	levels := e.groupNodesByLevel(layoutRoot)
+
+	// Calculate dimensions
+	e.calculateDimensions(levels)
+
+	// Assign coordinates with sequential leaf distribution
+	e.assignCoordinatesWithLeafOrder(levels)
 
 	return layoutRoot
 }
 
-// createLayoutTree creates a layout tree from the input tree
-func (e *Engine) createLayoutTree(node *decision_tree.Node, parent *LayoutNode, level int) *LayoutNode {
+// createBasicLayoutTree creates the initial layout tree with basic properties
+func (e *Engine) createBasicLayoutTree(node *decision_tree.Node, parent *LayoutNode, level int) *LayoutNode {
 	if node == nil {
 		return nil
-	}
-
-	// Calculate base node height
-	height := 30.0 // Base height
-
-	// Add space for conditions
-	if len(node.Conditions) > 0 {
-		conditionLines := (len(node.Conditions) + 1) / 2 // Estimate lines needed for conditions
-		if len(node.Children) == 0 {
-			// For terminal nodes, conditions go below
-			height += float64(conditionLines) * 15
-		} else {
-			// For non-terminal nodes, conditions go above
-			height += float64(conditionLines) * 12
-		}
-	}
-
-	// Add extra height for long labels
-	labelLines := (len(node.Label) + 19) / 20 // 20 chars per line
-	if labelLines > 1 {
-		height += float64(labelLines-1) * 15
 	}
 
 	layoutNode := &LayoutNode{
 		Node:   node,
 		Level:  level,
 		Parent: parent,
-		Height: height,
 		Style:  node.Style,
 	}
 
@@ -92,157 +91,237 @@ func (e *Engine) createLayoutTree(node *decision_tree.Node, parent *LayoutNode, 
 	if len(node.Children) > 0 {
 		layoutNode.Children = make([]*LayoutNode, len(node.Children))
 		for i, child := range node.Children {
-			layoutNode.Children[i] = e.createLayoutTree(child, layoutNode, level+1)
+			layoutNode.Children[i] = e.createBasicLayoutTree(child, layoutNode, level+1)
 		}
 	}
 
 	return layoutNode
 }
 
-// calculateSizes computes node and subtree dimensions
-func (e *Engine) calculateSizes(node *LayoutNode) {
-	if node == nil {
-		return
+// groupNodesByLevel groups nodes by their level using DFS
+func (e *Engine) groupNodesByLevel(root *LayoutNode) map[int]*LevelInfo {
+	levels := make(map[int]*LevelInfo)
+	if root == nil {
+		return levels
 	}
 
-	// Calculate node width based on content with max width limit
-	const maxChars = 20 // Maximum characters per line
-	labelLen := len(node.Node.Label)
-	var labelWidth float64
-	if labelLen > maxChars {
-		// If label is longer than maxChars, we'll need multiple lines
-		lines := (labelLen + maxChars - 1) / maxChars // Round up division
-		labelWidth = float64(maxChars) * 8            // Reduced character width
-		node.Height += float64(lines-1) * 15          // Reduced line height
-	} else {
-		labelWidth = float64(labelLen) * 8 // Reduced character width
+	var visit func(*LayoutNode)
+	visit = func(node *LayoutNode) {
+		if levels[node.Level] == nil {
+			levels[node.Level] = &LevelInfo{}
+		}
+		levels[node.Level].nodes = append(levels[node.Level].nodes, node)
+
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	visit(root)
+
+	return levels
+}
+
+// calculateDimensions calculates node dimensions and leaf counts bottom-up
+func (e *Engine) calculateDimensions(levels map[int]*LevelInfo) {
+	maxLevel := 0
+	for level := range levels {
+		if level > maxLevel {
+			maxLevel = level
+		}
 	}
 
-	// Calculate width needed for conditions
-	var conditionsWidth float64
-	if len(node.Node.Conditions) > 0 {
-		// Estimate conditions text width
-		condText := 0
-		for k, v := range node.Node.Conditions {
-			// Rough estimate of characters needed
-			condText += len(k) + 5 // 5 for "=value"
-			switch v := v.(type) {
-			case string:
-				condText += len(v)
-			default:
-				condText += 5 // Assume 5 chars for numbers etc
+	// Bottom-up calculation
+	for level := maxLevel; level >= 0; level-- {
+		info := levels[level]
+		for _, node := range info.nodes {
+			// Calculate node dimensions
+			e.calculateNodeDimensions(node)
+
+			// Calculate leaf count
+			if len(node.Children) == 0 {
+				node.LeafCount = 1
+				info.leafCount++
+			} else {
+				for _, child := range node.Children {
+					node.LeafCount += child.LeafCount
+				}
 			}
 		}
-		// Apply max width to conditions as well
-		if condText > maxChars {
-			conditionsWidth = float64(maxChars) * 6 // Reduced font size for conditions
-			node.Height += 15                       // Reduced extra height for wrapped conditions
-		} else {
-			conditionsWidth = float64(condText) * 6
-		}
-	}
 
-	// Use the larger of label width, conditions width, or base width
-	node.Width = math.Max(math.Max(labelWidth, conditionsWidth), e.config.BaseNodeWidth)
-	node.Width = math.Min(node.Width+e.config.NodePadding*2, float64(maxChars)*8+e.config.NodePadding*2) // Add padding but respect max width
-
-	// Process children
-	var totalChildrenWidth float64
-	var maxChildWidth float64
-
-	for _, child := range node.Children {
-		e.calculateSizes(child)
-		totalChildrenWidth += child.SubtreeWidth
-		if child.SubtreeWidth > maxChildWidth {
-			maxChildWidth = child.SubtreeWidth
-		}
-	}
-
-	// Add spacing between children
-	if len(node.Children) > 1 {
-		totalChildrenWidth += e.config.NodeSpacing * float64(len(node.Children)-1)
-	}
-
-	// Subtree width is the max of node width and total children width
-	node.SubtreeWidth = math.Max(node.Width, totalChildrenWidth)
-
-	// Add extra padding for better separation between subtrees
-	if len(node.Children) > 0 {
-		node.SubtreeWidth += e.config.NodeSpacing * 0.5 // Reduced extra padding
+		// Calculate total width required for this level
+		info.width = e.calculateLevelWidth(info.nodes)
 	}
 }
 
-// assignCoordinates assigns final x,y coordinates to nodes
-func (e *Engine) assignCoordinates(node *LayoutNode, x, y float64) {
+// calculateNodeDimensions calculates dimensions for a single node
+func (e *Engine) calculateNodeDimensions(node *LayoutNode) {
+	const maxChars = 20
+
+	// Base height
+	height := 40.0
+
+	// Add space for conditions
+	if len(node.Node.Conditions) > 0 {
+		conditionLines := (len(node.Node.Conditions) + 1) / 2
+		height += float64(conditionLines) * 15
+	}
+
+	// Add height for wrapped label
+	labelLines := (len(node.Node.Label) + maxChars - 1) / maxChars
+	if labelLines > 1 {
+		height += float64(labelLines-1) * 15
+	}
+
+	node.Height = height
+
+	// Calculate width with more space
+	labelWidth := math.Min(float64(len(node.Node.Label))*9, float64(maxChars)*9)
+	node.Width = math.Max(labelWidth+e.config.NodePadding*2, e.config.BaseNodeWidth)
+}
+
+// calculateLevelWidth calculates total width required for a level
+func (e *Engine) calculateLevelWidth(nodes []*LayoutNode) float64 {
+	if len(nodes) == 0 {
+		return 0
+	}
+
+	totalWidth := 0.0
+	for _, node := range nodes {
+		totalWidth += node.Width
+	}
+
+	// Add spacing between nodes
+	totalWidth += e.config.NodeSpacing * float64(len(nodes)-1)
+
+	return totalWidth
+}
+
+// collectLeafNodes collects all leaf nodes in left-to-right order
+func (e *Engine) collectLeafNodes(node *LayoutNode) {
 	if node == nil {
 		return
 	}
 
 	if len(node.Children) == 0 {
-		node.X = x
-		node.Y = y
-		return
+		node.IsLeaf = true
+		node.LeafIndex = len(e.leafNodes)
+		e.leafNodes = append(e.leafNodes, node)
 	}
 
-	// Calculate adaptive level height based on multiple factors
-	adaptiveLevelHeight := e.config.LevelHeight
-
-	// 1. Sibling density factor - more moderate adjustment for nodes with many siblings
-	if node.Parent != nil {
-		siblingCount := len(node.Parent.Children)
-		if siblingCount > 1 {
-			// Linear growth with smaller factor, capped at 1.5x
-			siblingFactor := math.Min(1.5, 1.0+float64(siblingCount-1)*0.15)
-			adaptiveLevelHeight *= siblingFactor
-		}
-	}
-
-	// 2. Subtree complexity factor - smaller increase for deeper subtrees
-	maxDepth := e.calculateSubtreeDepth(node)
-	if maxDepth > 1 {
-		// Reduced space increase for complex subtrees
-		depthFactor := 1.0 + float64(maxDepth-1)*0.1
-		adaptiveLevelHeight *= depthFactor
-	}
-
-	// 3. Level-based adjustment - gentler reduction
-	levelFactor := math.Max(0.9, 1.0-float64(node.Level)*0.03)
-	adaptiveLevelHeight *= levelFactor
-
-	// 4. Content-based adjustment - smaller increase for nodes with conditions
-	if len(node.Node.Conditions) > 0 {
-		adaptiveLevelHeight *= 1.1 // Reduced extra space for conditions
-	}
-
-	// Position all children
-	startX := x
 	for _, child := range node.Children {
-		e.assignCoordinates(child, startX, y+adaptiveLevelHeight)
-		startX += child.SubtreeWidth + e.config.NodeSpacing
+		e.collectLeafNodes(child)
 	}
-
-	// Position parent node
-	if e.centerParent && len(node.Children) > 0 {
-		firstChild := node.Children[0]
-		lastChild := node.Children[len(node.Children)-1]
-		node.X = firstChild.X + (lastChild.X-firstChild.X)/2
-	} else {
-		node.X = x
-	}
-	node.Y = y
 }
 
-// calculateSubtreeDepth returns the maximum depth of the subtree
-func (e *Engine) calculateSubtreeDepth(node *LayoutNode) int {
-	if len(node.Children) == 0 {
-		return 1
-	}
-	maxChildDepth := 0
-	for _, child := range node.Children {
-		childDepth := e.calculateSubtreeDepth(child)
-		if childDepth > maxChildDepth {
-			maxChildDepth = childDepth
+// assignCoordinatesWithLeafOrder assigns coordinates with sequential leaf distribution
+func (e *Engine) assignCoordinatesWithLeafOrder(levels map[int]*LevelInfo) {
+	startX := 50.0
+	startY := 50.0
+	maxLevel := 0
+	for level := range levels {
+		if level > maxLevel {
+			maxLevel = level
 		}
 	}
-	return maxChildDepth + 1
+
+	// Calculate Y coordinates for each level first
+	levelY := make(map[int]float64)
+	levelY[0] = startY
+
+	// First pass: position leaf nodes sequentially to calculate their positions
+	leafSpacing := e.config.LeafNodeSpacing
+	if leafSpacing == 0 {
+		leafSpacing = e.config.NodeSpacing * 1.5 // Fallback to default multiplier
+	}
+	currentLeafX := startX
+	for _, leaf := range e.leafNodes {
+		leaf.X = currentLeafX + leaf.Width/2
+		currentLeafX = leaf.X + leaf.Width/2 + leafSpacing
+	}
+
+	// Second pass: position non-leaf nodes bottom-up and calculate their positions
+	for level := maxLevel - 1; level >= 0; level-- {
+		info, exists := levels[level]
+		if !exists {
+			continue
+		}
+
+		for _, node := range info.nodes {
+			if !node.IsLeaf && len(node.Children) > 0 {
+				// Center parent over its children's span
+				leftMost := node.Children[0].X - node.Children[0].Width/2
+				rightMost := node.Children[len(node.Children)-1].X + node.Children[len(node.Children)-1].Width/2
+				node.X = leftMost + (rightMost-leftMost)/2
+			}
+		}
+	}
+
+	// Third pass: calculate Y coordinates with dynamic spacing
+	for level := 1; level <= maxLevel; level++ {
+		prevLevelMaxHeight := 0.0
+		if prevInfo, exists := levels[level-1]; exists {
+			for _, node := range prevInfo.nodes {
+				if node.Height > prevLevelMaxHeight {
+					prevLevelMaxHeight = node.Height
+				}
+			}
+		}
+
+		// Calculate spacing based on parent nodes' children span
+		maxSpacing := e.config.ParentChildSpacing // minimum spacing
+		if prevInfo, exists := levels[level-1]; exists {
+			for _, node := range prevInfo.nodes {
+				if len(node.Children) > 0 {
+					// Calculate children's horizontal span
+					leftMost := node.Children[0].X - node.Children[0].Width/2
+					rightMost := node.Children[len(node.Children)-1].X + node.Children[len(node.Children)-1].Width/2
+					span := rightMost - leftMost
+
+					// Calculate total spacing based on span and coefficient
+					spacing := e.config.ParentChildSpacing * (1 + span*e.config.VerticalSpanCoeff)
+					if spacing > maxSpacing {
+						maxSpacing = spacing
+					}
+				}
+			}
+		}
+
+		// Apply the spacing
+		levelY[level] = levelY[level-1] + prevLevelMaxHeight + maxSpacing
+	}
+
+	// Final pass: set Y coordinates and adjust horizontal spacing
+	for level := 0; level <= maxLevel; level++ {
+		info, exists := levels[level]
+		if !exists {
+			continue
+		}
+
+		// Set Y coordinates for all nodes at this level
+		for _, node := range info.nodes {
+			node.Y = levelY[level]
+		}
+
+		// Adjust horizontal spacing
+		nodes := info.nodes
+		for i := 1; i < len(nodes); i++ {
+			prev := nodes[i-1]
+			curr := nodes[i]
+			minSpacing := (prev.Width+curr.Width)/2 + e.config.NodeSpacing
+			if curr.X-prev.X < minSpacing {
+				shift := minSpacing - (curr.X - prev.X)
+				e.shiftSubtree(curr, shift)
+			}
+		}
+	}
+}
+
+func (e *Engine) shiftSubtree(node *LayoutNode, shift float64) {
+	if node == nil {
+		return
+	}
+	node.X += shift
+	for _, child := range node.Children {
+		e.shiftSubtree(child, shift)
+	}
 }
