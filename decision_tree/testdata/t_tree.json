@@ -1,0 +1,103 @@
+{
+    "id": "Root",
+    "label": "Root",
+    "children": [
+        {
+            "id": "EmptyRequest",
+            "label": "Testing an empty struct request that should result in validation error"
+        },
+        {
+            "id": "BasicSuccess_NoAssert",
+            "label": "Basic success request",
+            "conditions": {
+                "tags": [
+                    "happy_flow",
+                    "unactivated_user",
+                    "MP"
+                ]
+            },
+            "children": [
+                {
+                    "id": "BasicSuccess",
+                    "label": "BasicSuccess"
+                },
+                {
+                    "id": "BasicActivatedUserSuccess",
+                    "label": "Basic success request",
+                    "conditions": {
+                        "tags": [
+                            "happy_flow",
+                            "activated_user",
+                            "MP"
+                        ]
+                    },
+                    "children": [
+                        {
+                            "id": "BasicActivatedUserSuccess_Assert",
+                            "label": "BasicActivatedUserSuccess_Assert"
+                        },
+                        {
+                            "id": "RiskRejected",
+                            "label": "Risk rejected",
+                            "conditions": {
+                                "tags": [
+                                    "error"
+                                ]
+                            }
+                        },
+                        {
+                            "id": "ScanRequest",
+                            "label": "ScanRequest",
+                            "children": [
+                                {
+                                    "id": "ScanRequest_Success",
+                                    "label": "ScanRequest_Success"
+                                },
+                                {
+                                    "id": "ScanRequest_Xpecial",
+                                    "label": "ScanRequest_Xpecial",
+                                    "children": [
+                                        {
+                                            "id": "ScanRequest_Xpecial_LimitNoCheck",
+                                            "label": "ScanRequest_Xpecial_LimitNoCheck"
+                                        },
+                                        {
+                                            "id": "ScanRequest_Xpecial_RuleMatch",
+                                            "label": "ScanRequest_Xpecial_RuleMatch",
+                                            "children": [
+                                                {
+                                                    "id": "ScanRequest_Xpecial_RuleMatch_UserIDLevel",
+                                                    "label": "ScanRequest_Xpecial_RuleMatch_UserIDLevel introduced in v2.37.0"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "id": "Online",
+                            "label": "Online",
+                            "children": [
+                                {
+                                    "id": "Online_Success",
+                                    "label": "Online_Success",
+                                    "conditions": {
+                                        "tags": [
+                                            "happy_flow",
+                                            "online"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "ParamError_MissingAmount",
+                    "label": "removing order_amount causes error"
+                }
+            ]
+        }
+    ]
+}

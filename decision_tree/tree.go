@@ -32,14 +32,14 @@ type Config struct {
 // DefaultConfig returns a default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		LevelHeight:   60,  // Reduced vertical spacing
-		NodeSpacing:   20,  // Reduced horizontal spacing
-		NodePadding:   10,  // Reduced node padding
-		BaseNodeWidth: 140, // Reduced minimum node width
+		LevelHeight:   70,  // Moderate base vertical spacing
+		NodeSpacing:   40,  // Horizontal spacing between nodes
+		NodePadding:   15,  // Internal node padding
+		BaseNodeWidth: 160, // Base node width
 		DefaultStyle: &NodeStyle{
 			Shape:       "rectangle",
-			Fill:        "#ffffff",
-			Stroke:      "#000000",
+			Fill:        "url(#nodeGradient)",
+			Stroke:      "#666666",
 			StrokeWidth: 1,
 		},
 	}

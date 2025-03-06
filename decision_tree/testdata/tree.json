@@ -1,0 +1,171 @@
+{
+  "id": "root",
+  "label": "Feature Status Check",
+  "children": [
+    {
+      "id": "frozen",
+      "label": "Feature Frozen",
+      "children": [
+        {
+          "id": "hide_feature",
+          "label": "Hide Feature",
+          "conditions": {
+            "feature_state": 2,
+            "feature_type": 1,
+            "user_state": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "inactive",
+      "label": "Feature Inactive",
+      "children": [
+        {
+          "id": "display_activation",
+          "label": "Display Activation Entry",
+          "conditions": {
+            "config_link": "",
+            "feature_state": 4,
+            "feature_type": 2,
+            "user_state": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "activated",
+      "label": "Feature Activated",
+      "children": [
+        {
+          "id": "limit_enough",
+          "label": "Limit Sufficient"
+        },
+        {
+          "id": "limit_not_enough",
+          "label": "Limit Insufficient",
+          "children": [
+            {
+              "id": "xtra_ineligible",
+              "label": "Extension Ineligible",
+              "children": [
+                {
+                  "id": "error_popup",
+                  "label": "Display Error Message",
+                  "conditions": {
+                    "feature_state": 1,
+                    "feature_type": 1,
+                    "user_state": 2
+                  }
+                }
+              ]
+            },
+            {
+              "id": "xtra_eligible",
+              "label": "Extension Eligible",
+              "children": [
+                {
+                  "id": "ext_not_activated",
+                  "label": "Extension Not Activated",
+                  "children": [
+                    {
+                      "id": "auto_trigger",
+                      "label": "Auto Trigger Activation",
+                      "conditions": {
+                        "feature_state": 4,
+                        "feature_type": 2,
+                        "user_state": 2
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "ext_activated",
+                  "label": "Extension Activated",
+                  "children": [
+                    {
+                      "id": "ext_limit_available",
+                      "label": "Extension Limit Available",
+                      "children": [
+                        {
+                          "id": "ext_limit_enough",
+                          "label": "Extension Limit Sufficient",
+                          "children": [
+                            {
+                              "id": "display_plans",
+                              "label": "Display Payment Plans",
+                              "conditions": {
+                                "feature_state": 0,
+                                "feature_type": 2,
+                                "transaction_type": 7,
+                                "user_state": 2
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "id": "ext_limit_not_enough",
+                          "label": "Extension Limit Insufficient",
+                          "children": [
+                            {
+                              "id": "show_options",
+                              "label": "Show Payment Options",
+                              "conditions": {
+                                "feature_state": 4,
+                                "feature_type": 2,
+                                "user_state": 2
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "ext_frozen",
+                      "label": "Extension Frozen",
+                      "children": [
+                        {
+                          "id": "ext_limit_expired",
+                          "label": "Extension Limit Expired",
+                          "children": [
+                            {
+                              "id": "display_renewal",
+                              "label": "Show Renewal Options",
+                              "conditions": {
+                                "feature_state": 5,
+                                "feature_type": 2,
+                                "user_state": 2
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "id": "others",
+                          "label": "Other Cases",
+                          "children": [
+                            {
+                              "id": "show_current",
+                              "label": "Show Current Status",
+                              "conditions": {
+                                "feature_state": 7,
+                                "feature_type": 2,
+                                "user_state": 2
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "conditions": {
+    "feature_id": 8
+  }
+}

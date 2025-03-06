@@ -59,16 +59,25 @@ func (e *Engine) createLayoutTree(node *decision_tree.Node, parent *LayoutNode, 
 		return nil
 	}
 
-	// Calculate node height based on content
-	height := 30.0 // Reduced base height
+	// Calculate base node height
+	height := 30.0 // Base height
+
+	// Add space for conditions
 	if len(node.Conditions) > 0 {
+		conditionLines := (len(node.Conditions) + 1) / 2 // Estimate lines needed for conditions
 		if len(node.Children) == 0 {
 			// For terminal nodes, conditions go below
-			height += 20 // Reduced extra space for conditions below
+			height += float64(conditionLines) * 15
 		} else {
 			// For non-terminal nodes, conditions go above
-			height += 15 // Reduced extra space for conditions above
+			height += float64(conditionLines) * 12
 		}
+	}
+
+	// Add extra height for long labels
+	labelLines := (len(node.Label) + 19) / 20 // 20 chars per line
+	if labelLines > 1 {
+		height += float64(labelLines-1) * 15
 	}
 
 	layoutNode := &LayoutNode{
@@ -175,16 +184,45 @@ func (e *Engine) assignCoordinates(node *LayoutNode, x, y float64) {
 		return
 	}
 
-	// First position all children from left to right
-	startX := x // Start from parent's x position
+	// Calculate adaptive level height based on multiple factors
+	adaptiveLevelHeight := e.config.LevelHeight
+
+	// 1. Sibling density factor - more moderate adjustment for nodes with many siblings
+	if node.Parent != nil {
+		siblingCount := len(node.Parent.Children)
+		if siblingCount > 1 {
+			// Linear growth with smaller factor, capped at 1.5x
+			siblingFactor := math.Min(1.5, 1.0+float64(siblingCount-1)*0.15)
+			adaptiveLevelHeight *= siblingFactor
+		}
+	}
+
+	// 2. Subtree complexity factor - smaller increase for deeper subtrees
+	maxDepth := e.calculateSubtreeDepth(node)
+	if maxDepth > 1 {
+		// Reduced space increase for complex subtrees
+		depthFactor := 1.0 + float64(maxDepth-1)*0.1
+		adaptiveLevelHeight *= depthFactor
+	}
+
+	// 3. Level-based adjustment - gentler reduction
+	levelFactor := math.Max(0.9, 1.0-float64(node.Level)*0.03)
+	adaptiveLevelHeight *= levelFactor
+
+	// 4. Content-based adjustment - smaller increase for nodes with conditions
+	if len(node.Node.Conditions) > 0 {
+		adaptiveLevelHeight *= 1.1 // Reduced extra space for conditions
+	}
+
+	// Position all children
+	startX := x
 	for _, child := range node.Children {
-		e.assignCoordinates(child, startX, y+e.config.LevelHeight)
+		e.assignCoordinates(child, startX, y+adaptiveLevelHeight)
 		startX += child.SubtreeWidth + e.config.NodeSpacing
 	}
 
-	// Then position the parent node
+	// Position parent node
 	if e.centerParent && len(node.Children) > 0 {
-		// Center parent over its children span
 		firstChild := node.Children[0]
 		lastChild := node.Children[len(node.Children)-1]
 		node.X = firstChild.X + (lastChild.X-firstChild.X)/2
@@ -192,4 +230,19 @@ func (e *Engine) assignCoordinates(node *LayoutNode, x, y float64) {
 		node.X = x
 	}
 	node.Y = y
+}
+
+// calculateSubtreeDepth returns the maximum depth of the subtree
+func (e *Engine) calculateSubtreeDepth(node *LayoutNode) int {
+	if len(node.Children) == 0 {
+		return 1
+	}
+	maxChildDepth := 0
+	for _, child := range node.Children {
+		childDepth := e.calculateSubtreeDepth(child)
+		if childDepth > maxChildDepth {
+			maxChildDepth = childDepth
+		}
+	}
+	return maxChildDepth + 1
 }

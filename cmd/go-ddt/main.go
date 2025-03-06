@@ -48,6 +48,8 @@ func handle(args []string) error {
 		return nil
 	case "gen":
 		return handleGen(args[1:])
+	case "view":
+		return handleView(args[1:])
 	default:
 		return fmt.Errorf("unrecognized command: %s", cmd)
 	}

@@ -216,4 +216,11 @@ func main() {
 	}
 
 	fmt.Println("Generated tree.svg and tree.json")
+
+	server := svg.NewServer(svg.NewRenderer(decision_tree.DefaultConfig()))
+	err = server.Serve(tree)
+	if err != nil {
+		fmt.Printf("Error serving SVG: %v\n", err)
+		return
+	}
 }
