@@ -129,15 +129,20 @@ func (c *Tree[Q, R, TC]) init() {
 }
 
 func (c *Tree[Q, R, TC]) Run(t testing_ctx.T) {
-	c.run(t, []*Node[Q, R, TC]{c.Root})
+	c.run(t, NodePath[Q, R, TC]{c.Root})
 }
 
-func (c *Tree[Q, R, TC]) run(t testing_ctx.T, nodePath []*Node[Q, R, TC]) {
+func (c *Tree[Q, R, TC]) RunNode(t testing_ctx.T, node *Node[Q, R, TC]) {
+	nodePath := c.GetNodePath(node)
+	nodePath.Run(t)
+}
+
+func (c *Tree[Q, R, TC]) run(t testing_ctx.T, nodePath NodePath[Q, R, TC]) {
 	node := nodePath[len(nodePath)-1]
 	id := node.ID
 	t.Run(id, func(t testing_ctx.T) {
 		if node.Assert != nil || node.AssertSelf != nil {
-			c.runPath(t, nodePath)
+			nodePath.Run(t)
 		}
 		for _, child := range node.Children {
 			c.run(t, append(nodePath, child))
@@ -149,7 +154,21 @@ func (c *Tree[Q, R, TC]) FindNode(id string) *Node[Q, R, TC] {
 	return c.idToNode[id]
 }
 
-func (c *Tree[Q, R, TC]) RunNode(t testing_ctx.T, node *Node[Q, R, TC]) {
+func (c *Tree[Q, R, TC]) GetPath(id string) NodePath[Q, R, TC] {
+	if id == "" {
+		panic(fmt.Errorf("id is empty"))
+	}
+	node := c.idToNode[id]
+	if node == nil {
+		panic(fmt.Errorf("node not found: %s", id))
+	}
+	return c.GetNodePath(node)
+}
+
+func (c *Tree[Q, R, TC]) GetNodePath(node *Node[Q, R, TC]) NodePath[Q, R, TC] {
+	if node == nil {
+		panic(fmt.Errorf("node is nil"))
+	}
 	var nodePathReversed []*Node[Q, R, TC]
 
 	internalNode := c.buildingNodeToInternalNode[node]
@@ -161,8 +180,7 @@ func (c *Tree[Q, R, TC]) RunNode(t testing_ctx.T, node *Node[Q, R, TC]) {
 		nodePathReversed = append(nodePathReversed, p)
 		next := c.childToParent[p]
 		if next == nil {
-			t.Errorf("missing parent: %s", p.ID)
-			return
+			panic(fmt.Errorf("missing parent: %s", p.ID))
 		}
 		p = next
 	}
@@ -174,58 +192,5 @@ func (c *Tree[Q, R, TC]) RunNode(t testing_ctx.T, node *Node[Q, R, TC]) {
 	for i := 0; i < n; i++ {
 		nodePath[i] = nodePathReversed[n-1-i]
 	}
-	c.runPath(t, nodePath)
-}
-
-func (c *Tree[Q, R, TC]) runPath(t testing_ctx.T, nodePath []*Node[Q, R, TC]) {
-	if len(nodePath) == 0 {
-		t.Errorf("node path is empty")
-		return
-	}
-
-	n := len(nodePath)
-	var runner func(tctx *TC, req *Q) (*R, error)
-	for i := n - 1; i >= 0; i-- {
-		if nodePath[i].Run != nil {
-			runner = nodePath[i].Run
-			break
-		}
-	}
-	if runner == nil {
-		t.Errorf("missing runner: %s", nodePath[n-1].ID)
-		return
-	}
-
-	var req *Q
-	var tc TC
-	tctx := &tc
-	var itctx interface{} = tctx
-	if tctx, ok := itctx.(ITestingAware); ok {
-		tctx.OnTestingInit(t)
-	}
-	for i := 0; i < n; i++ {
-		if nodePath[i].Setup != nil {
-			tctx, req = nodePath[i].Setup(tctx, req)
-		}
-	}
-
-	resp, err := runner(tctx, req)
-	// check the assert chain until inherit is false
-	var asserts []func(t testing_ctx.T, tctx *TC, req *Q, resp *R, err error)
-	for i := n - 1; i >= 0; i-- {
-		nd := nodePath[i]
-		if nd.Assert != nil {
-			asserts = append(asserts, nd.Assert)
-		}
-		if !nd.InheritAssert {
-			break
-		}
-	}
-
-	for i := len(asserts) - 1; i >= 0; i-- {
-		asserts[i](t, tctx, req, resp, err)
-	}
-	if nodePath[n-1].AssertSelf != nil {
-		nodePath[n-1].AssertSelf(t, tctx, req, resp, err)
-	}
+	return nodePath
 }
