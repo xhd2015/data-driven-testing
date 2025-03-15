@@ -16,12 +16,12 @@ func (c NodePath[Q, R, TC]) Run(t testing_ctx.T) {
 		t.Errorf("missing runner: %s", c[len(c)-1].ID)
 		return
 	}
-	req, tctx := c.SetupTesting(t)
-	resp, err := runner(tctx, req)
+	req, tctx := c.Setup(t)
+	resp, err := runner(t, tctx, req)
 	c.Assert(t, tctx, req, resp, err)
 }
 
-func (c NodePath[Q, R, TC]) Runner() func(tctx *TC, req *Q) (*R, error) {
+func (c NodePath[Q, R, TC]) Runner() func(t testing_ctx.T, tctx *TC, req *Q) (*R, error) {
 	n := len(c)
 	for i := n - 1; i >= 0; i-- {
 		if c[i].Run != nil {
@@ -31,15 +31,7 @@ func (c NodePath[Q, R, TC]) Runner() func(tctx *TC, req *Q) (*R, error) {
 	return nil
 }
 
-func (c NodePath[Q, R, TC]) SetupTesting(t testing_ctx.T) (*Q, *TC) {
-	return c.setup(t)
-}
-
-func (c NodePath[Q, R, TC]) Setup() (*Q, *TC) {
-	return c.setup(nil)
-}
-
-func (c NodePath[Q, R, TC]) setup(t testing_ctx.T) (*Q, *TC) {
+func (c NodePath[Q, R, TC]) Setup(t testing_ctx.T) (*Q, *TC) {
 	var req *Q
 	var tc TC
 	tctx := &tc
@@ -52,7 +44,7 @@ func (c NodePath[Q, R, TC]) setup(t testing_ctx.T) (*Q, *TC) {
 	n := len(c)
 	for i := 0; i < n; i++ {
 		if c[i].Setup != nil {
-			tctx, req = c[i].Setup(tctx, req)
+			tctx, req = c[i].Setup(t, tctx, req)
 		}
 	}
 	return req, tctx

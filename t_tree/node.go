@@ -14,8 +14,8 @@ type Node[Q any, R any, TC any] struct {
 	Description   string
 	Tags          []string // for grouping
 
-	Run        func(tctx *TC, req *Q) (*R, error)
-	Setup      func(tctx *TC, req *Q) (*TC, *Q)
+	Run        func(t testing_ctx.T, tctx *TC, req *Q) (*R, error)
+	Setup      func(t testing_ctx.T, tctx *TC, req *Q) (*TC, *Q)
 	Assert     func(t testing_ctx.T, tctx *TC, req *Q, res *R, err error)
 	AssertSelf func(t testing_ctx.T, tctx *TC, req *Q, res *R, err error)
 
