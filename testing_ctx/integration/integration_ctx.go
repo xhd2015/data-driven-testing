@@ -24,6 +24,9 @@ type IntegrationContext struct {
 	infoWriter io.Writer
 	errWriter  io.Writer
 
+	startedAt  time.Time
+	finishedAt time.Time
+
 	context context.Context
 }
 
@@ -129,8 +132,28 @@ func (t *IntegrationContext) Skip(args ...interface{}) {
 	fmt.Fprintln(t.infoWriter, args...)
 }
 
+func (t *IntegrationContext) Status() testing_ctx.Status {
+	if t.startedAt.IsZero() {
+		return testing_ctx.StatusNone
+	}
+	if t.isSkip {
+		return testing_ctx.StatusSkip
+	}
+	if t.isError {
+		return testing_ctx.StatusFail
+	}
+	if t.finishedAt.IsZero() {
+		return testing_ctx.StatusRunning
+	}
+	return testing_ctx.StatusPass
+}
+
 func (t *IntegrationContext) Run(name string, f func(t testing_ctx.T)) {
 	startTime := time.Now()
+	defer func() {
+		t.finishedAt = time.Now()
+	}()
+	t.startedAt = startTime
 	subT := &IntegrationContext{
 		name:       name,
 		indent:     t.indent + "  ",
