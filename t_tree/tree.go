@@ -141,7 +141,7 @@ func (c *Tree[Q, R, TC]) run(t testing_ctx.T, nodePath NodePath[Q, R, TC]) {
 	node := nodePath[len(nodePath)-1]
 	id := node.ID
 	t.Run(id, func(t testing_ctx.T) {
-		if node.Assert != nil || node.AssertSelf != nil {
+		if node.Assert != nil {
 			nodePath.Run(t)
 		}
 		for _, child := range node.Children {

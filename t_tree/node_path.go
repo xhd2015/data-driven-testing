@@ -67,7 +67,4 @@ func (c NodePath[Q, R, TC]) Assert(t testing_ctx.T, tctx *TC, req *Q, resp *R, e
 	for i := len(asserts) - 1; i >= 0; i-- {
 		asserts[i](t, tctx, req, resp, err)
 	}
-	if c[n-1].AssertSelf != nil {
-		c[n-1].AssertSelf(t, tctx, req, resp, err)
-	}
 }
