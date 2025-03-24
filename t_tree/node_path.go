@@ -1,8 +1,32 @@
 package t_tree
 
 import (
+	"fmt"
+	"runtime/debug"
+
 	"github.com/xhd2015/data-driven-testing/testing_ctx"
 )
+
+type PanicError struct {
+	Arg   interface{}
+	Stack []byte
+}
+
+func (c *PanicError) Error() string {
+	if pe, ok := c.Arg.(error); ok {
+		return pe.Error()
+	} else {
+		return fmt.Sprintf("panic: %v", c.Arg)
+	}
+}
+
+func (c *PanicError) Unwrap() error {
+	if pe, ok := c.Arg.(error); ok {
+		return pe
+	} else {
+		return fmt.Errorf("panic: %v", c.Arg)
+	}
+}
 
 type NodePath[Q any, R any, TC any] []*Node[Q, R, TC]
 
@@ -17,7 +41,21 @@ func (c NodePath[Q, R, TC]) Run(t testing_ctx.T) {
 		return
 	}
 	req, tctx := c.Setup(t)
-	resp, err := runner(t, tctx, req)
+
+	var resp *R
+	var err error
+	func() {
+		defer func() {
+			if e := recover(); e != nil {
+				err = &PanicError{
+					Arg:   e,
+					Stack: debug.Stack(),
+				}
+			}
+		}()
+		resp, err = runner(t, tctx, req)
+	}()
+
 	c.Assert(t, tctx, req, resp, err)
 }
 
