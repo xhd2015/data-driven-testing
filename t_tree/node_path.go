@@ -106,3 +106,11 @@ func (c NodePath[Q, R, TC]) Assert(t testing_ctx.T, tctx *TC, req *Q, resp *R, e
 		asserts[i](t, tctx, req, resp, err)
 	}
 }
+
+func (c NodePath[Q, R, TC]) Parent() NodePath[Q, R, TC] {
+	n := len(c)
+	if n == 0 {
+		return nil
+	}
+	return c[:n-1]
+}
