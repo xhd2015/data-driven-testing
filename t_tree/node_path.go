@@ -102,6 +102,11 @@ func (c NodePath[Q, R, TC]) Assert(t testing_ctx.T, tctx *TC, req *Q, resp *R, e
 		}
 	}
 
+	if len(asserts) == 0 {
+		t.Skip("no assert")
+		return
+	}
+
 	for i := len(asserts) - 1; i >= 0; i-- {
 		asserts[i](t, tctx, req, resp, err)
 	}
