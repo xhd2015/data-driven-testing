@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/xhd2015/data-driven-testing/testing_ctx"
 )
+
+var errFatal = errors.New("FATAL")
 
 type IntegrationContext struct {
 	name    string
@@ -97,6 +100,20 @@ func (t *IntegrationContext) Logf(format string, args ...interface{}) {
 	fmt.Fprintln(t.infoWriter)
 }
 
+// Fatalf implements testing_ctx.T.
+func (t *IntegrationContext) Fatalf(format string, args ...interface{}) {
+	t.isError = true
+	_, file, line, _ := runtime.Caller(1)
+	fmt.Fprint(t.errWriter, t.getPrefix())
+	fmt.Fprint(t.errWriter, filepath.Base(file))
+	fmt.Fprint(t.errWriter, ":")
+	fmt.Fprint(t.errWriter, line)
+	fmt.Fprint(t.errWriter, ": ")
+	fmt.Fprintf(t.errWriter, format, args...)
+	fmt.Fprintln(t.errWriter)
+	panic(errFatal)
+}
+
 // Error implements testing_ctx.T.
 func (t *IntegrationContext) Error(args ...interface{}) {
 	t.isError = true
@@ -118,6 +135,19 @@ func (t *IntegrationContext) Log(args ...interface{}) {
 	fmt.Fprint(t.infoWriter, line)
 	fmt.Fprint(t.infoWriter, ": ")
 	fmt.Fprintln(t.infoWriter, args...)
+}
+
+// Fatal implements testing_ctx.T.
+func (t *IntegrationContext) Fatal(args ...interface{}) {
+	t.isError = true
+	_, file, line, _ := runtime.Caller(1)
+	fmt.Fprint(t.errWriter, t.getPrefix())
+	fmt.Fprint(t.errWriter, filepath.Base(file))
+	fmt.Fprint(t.errWriter, ":")
+	fmt.Fprint(t.errWriter, line)
+	fmt.Fprint(t.errWriter, ": ")
+	fmt.Fprintln(t.errWriter, args...)
+	panic(errFatal)
 }
 
 // Skip implements testing_ctx.T.
@@ -173,6 +203,9 @@ func (t *IntegrationContext) Run(name string, f func(t testing_ctx.T)) {
 	defer func() {
 		if e := recover(); e != nil {
 			subT.isError = true
+			if e == errFatal {
+				return
+			}
 			fmt.Fprint(t.errWriter, t.getPrefix())
 			fmt.Fprintf(t.errWriter, "panic: %v\n", e)
 			stack := debug.Stack()
